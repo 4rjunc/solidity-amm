@@ -9,5 +9,18 @@ contract Pool {
   using Math for uint32;
 
   mapping(address => uint256) public balances;
+  uint256 totalSupply;
   uint32 slope;
+
+  constructor(uint256 initialSupply, uint32 _slope){
+      totalSupply = initialSupply;
+      slope = _slope;
+  }
+
+  function buy() public payable  {
+   uint256 tokensToMint = calculateBuyReturn();
+   totalSupply = totalSupply.add(tokensToMint);
+  }
+
+  function calculateBuyReturn() public view return(uint256) {}
 }
