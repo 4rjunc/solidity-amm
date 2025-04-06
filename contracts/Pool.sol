@@ -18,11 +18,23 @@ contract Pool {
   }
 
   function buy() public payable  {
-   require(msg.value > 0);
+   require(msg.value > 0, "Sent some ETH");
    uint256 tokensToMint = calculateBuyReturn();
-   totalSupply += tokensToMint;
+    bool success;
+   //totalSupply += tokensToMint; // unable to use .add() from SafeMath
+   (success, totalSupply) = totalSupply.tryAdd(tokensToMint);
    balances[msg.sender] = tokensToMint;
   }
 
-  function calculateBuyReturn() public view returns(uint256) {}
+  function calculateBuyReturn() public view returns(uint256) {
+
+  }
+
+  function calculateTokenPrice() public view returns(uint256) {
+    uint256 temp;
+    bool success;
+    (success, temp) = totalSupply.tryMul(totalSupply);
+
+    return temp;
+  }
 }
