@@ -18,9 +18,11 @@ contract Pool {
   }
 
   function buy() public payable  {
+   require(msg.value > 0);
    uint256 tokensToMint = calculateBuyReturn();
-   totalSupply = totalSupply.add(tokensToMint);
+   totalSupply += tokensToMint;
+   balances[msg.sender] = tokensToMint;
   }
 
-  function calculateBuyReturn() public view return(uint256) {}
+  function calculateBuyReturn() public view returns(uint256) {}
 }
