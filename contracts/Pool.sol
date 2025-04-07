@@ -34,7 +34,6 @@ contract Pool {
     uint256 temp;
     bool success;
     (success, temp) = totalSupply.tryMul(totalSupply);
-
-    return temp;
+    return  slope * temp;
   }
 }
