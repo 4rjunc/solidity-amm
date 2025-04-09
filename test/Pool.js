@@ -31,7 +31,7 @@ describe("Pool", () => {
     const newTokenPrice = await pool.calculateTokenPrice();
     console.log("Token Price After Buy: ", ethers.formatEther(newTokenPrice), " ETH per Token")
 
-    const balance = await pool.balances(owner.address);
+    const balance = await pool.balanceOf(owner.address);
     console.log("Balance After Buy: ", ethers.formatUnits(balance, 0), " tokens");
 
 
@@ -44,7 +44,7 @@ describe("Pool", () => {
     const newTokenPriceAfterSell = await pool.calculateTokenPrice();
     console.log("Token Price After Sell: ", ethers.formatEther(newTokenPriceAfterSell), " ETH")
 
-    const balanceAfterSell = await pool.balances(owner.address);
+    const balanceAfterSell = await pool.balanceOf(owner.address);
     console.log("Balance After Sell: ", ethers.formatUnits(balanceAfterSell), " tokens")
 
   })
