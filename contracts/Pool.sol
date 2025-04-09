@@ -18,11 +18,14 @@ contract Pool {
   }
 
   function sell(uint256 tokens) public {
+    require(balances[msg.sender] >= tokens);
+
     totalSupply = totalSupply - tokens;
-    uint256 currentBalance = balances[msg.sender];
-    balances[msg.sender] = currentBalance - tokens;
+    uint256 balance = balances[msg.sender];
+    balances[msg.sender] = balance - tokens;
     
     uint256 ethReturn = calculateSellReturn(tokens);
+    require(ethReturn <= address(this).balance, "Contract is broke like you"); // Checks if the contract has enough ETH to sent back
     
     payable(msg.sender).transfer(ethReturn);
   }
@@ -58,4 +61,6 @@ contract Pool {
     // find the differene between the arithmetic operations like *, .tryMul() and .mul()
     return  slope * temp;
   }
+  
+  receive() external payable{}
 }
