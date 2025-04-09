@@ -15,6 +15,7 @@ describe("Pool", () => {
     console.log("Token Price Before Buy: ", tokenPrice);
 
 
+    console.log("\n-----BUYING------");
     //Buying
     await pool.buy({ value: ethers.parseEther("2.0") }); // buying for 2 ETH
 
@@ -24,6 +25,7 @@ describe("Pool", () => {
     const balance = await pool.balances(owner.address);
     console.log("Balance After Buy: ", balance);
 
+    console.log("\n-----SELLING------");
     //Selling
     await pool.sell(balance);
     const newTokenPriceAfterSell = await pool.calculateTokenPrice();
