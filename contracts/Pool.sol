@@ -74,8 +74,7 @@ contract BondingCurvePool is ERC20 {
     // Sell tokens to get ETH back
     function sell(uint256 tokenAmount) public {
         require(tokenAmount > 0, "Must sell more than 0 tokens");
-        require(balanceOf(msg.sender) >= tokenAmount, "Not enough tokens to sell");
-        
+        require(balanceOf(msg.sender) >= tokenAmount, "Not enough tokens to sell");   
         uint256 ethToReturn = calculateSellReturn(tokenAmount);
         require(ethToReturn > 0, "Not enough tokens to receive ETH");
         require(ethToReturn <= address(this).balance, "Contract has insufficient ETH");
