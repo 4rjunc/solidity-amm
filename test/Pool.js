@@ -8,7 +8,7 @@ describe("BondingCurvePool", () => {
   beforeEach(async () => {
     [owner, buyer] = await ethers.getSigners();
     const BondingCurvePool = await ethers.getContractFactory("BondingCurvePool");
-    pool = await BondingCurvePool.deploy("Bonding Token", "BOND", reserveRatio);
+    pool = await BondingCurvePool.deploy("Bonding Token", "BOND", reserveRatio, owner); //owner gets the 20% minted tokens
 
     // Add some initial liquidity
     await owner.sendTransaction({

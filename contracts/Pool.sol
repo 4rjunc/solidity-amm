@@ -88,15 +88,16 @@ contract BondingCurvePool is ERC20 {
     function sell(uint256 tokenAmount) public {
         require(tokenAmount > 0, "Must sell more than 0 tokens");
         require(balanceOf(msg.sender) >= tokenAmount, "Not enough tokens to sell");   
+
         uint256 ethToReturn = calculateSellReturn(tokenAmount);
         require(ethToReturn > 0, "Not enough tokens to receive ETH");
         require(ethToReturn <= address(this).balance, "Contract has insufficient ETH");
         
-        _burn(msg.sender, tokenAmount);
+        _transfer(msg.sender, address(this), tokenAmount);
         reserveBalance -= ethToReturn;
         payable(msg.sender).transfer(ethToReturn);
         
-        emit TokensSold(msg.sender, tokenAmount, ethToReturn);
+        emit TokensSold(msg.sender, tokenAmount, ethToReturn); // my assumption is to print circulatingSupply, poolTokenBalance to get the market cap
     }
     
     // Fallback function to handle ETH transfers
