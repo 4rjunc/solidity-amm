@@ -4,14 +4,15 @@ const { expect } = require("chai");
 describe("BondingCurvePool", () => {
   let pool, owner, buyer, treasury;
   const reserveRatio = 20; // 20% reserve ratio
+  const initialTokenPrice = ethers.parseUnits("0.000001", "ether"); // 0.000001 ETH per token (very small)
 
   beforeEach(async () => {
     [owner, buyer, treasury] = await ethers.getSigners();
     const BondingCurvePool = await ethers.getContractFactory("BondingCurvePool");
-    pool = await BondingCurvePool.deploy("Bonding Token", "BOND", reserveRatio, treasury.address); //owner gets the 20% minted tokens
+    pool = await BondingCurvePool.deploy("Bonding Token", "BOND", reserveRatio, treasury.address, initialTokenPrice); //owner gets the 20% minted tokens
 
     // Add some initial liquidity
-    await pool.connect(owner).addLiquidity({ value: ethers.parseEther("10.0") });
+    await pool.connect(owner).addLiquidity({ value: ethers.parseEther("0.001") });
   });
 
   it("should properly handle buy and sell operations", async () => {
@@ -22,7 +23,7 @@ describe("BondingCurvePool", () => {
     console.log("Initial Token Price:", ethers.formatEther(initialPrice));
 
     // Buyer purchases tokens
-    const buyAmount = ethers.parseEther("2.0");
+    const buyAmount = ethers.parseEther("0.001");
     console.log("\n--- BUYING TOKENS ---");
     await pool.connect(buyer).buy({ value: buyAmount });
 

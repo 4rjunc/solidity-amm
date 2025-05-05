@@ -11,6 +11,7 @@ contract BondingCurvePool is ERC20 {
     uint256 public reserveBalance;
     uint256 public reserveRatio; 
     uint256 public constant INITIAL_SUPPLY = 1_000_000_000 * 1e18; // 1 Billion tokens with 18 decimals
+    uint256 public initialTokenPrice;
     
     event TokensPurchased(address indexed buyer, uint256 amountEth, uint256 amountTokens);
     event TokensSold(address indexed seller, uint256 amountTokens, uint256 amountEth);
@@ -19,25 +20,29 @@ contract BondingCurvePool is ERC20 {
         string memory name,
         string memory symbol,
         uint256 _reserveRatio,
-        address treasury
+        address _treasury,
+        uint256 _initialTokenPrice
     ) ERC20(name, symbol) {
         require(_reserveRatio > 0 && _reserveRatio <= 100, "Reserve ratio must be between 1-100");
+        require(_initialTokenPrice > 0, "Initial price must be greater than 0");
+
         reserveRatio = _reserveRatio;
+        initialTokenPrice = _initialTokenPrice;
 
         // Mint token
         _mint(address(this), INITIAL_SUPPLY);
 
         // OPTIONAL: token transfer to treasury for team/marketing etc 
-        uint256 treasuryAmount = INITIAL_SUPPLY * 20/100;
-        _transfer(address(this), treasury, treasuryAmount);
+        //uint256 treasuryAmount = INITIAL_SUPPLY * 20/100;
+        //_transfer(address(this), treasury, treasuryAmount);
     }
 
     function calculateCurrentPrice() public view returns (uint256) {
         uint256 poolTokenBalance = balanceOf(address(this));
         uint256 circulatingSupply = INITIAL_SUPPLY - poolTokenBalance;
 
-        if (circulatingSupply == 0) {
-            return 1e15; // Initial price of 0.001 ETH per token
+        if (circulatingSupply == 0 || reserveBalance == 0) {
+            return initialTokenPrice; // Initial price of 0.001 ETH per token
         }
         
         return (reserveBalance * 1e18) / (totalSupply() * reserveRatio / 100);
@@ -48,8 +53,8 @@ contract BondingCurvePool is ERC20 {
         uint256 poolTokenBalance = balanceOf(address(this));
         uint256 circulatingSupply = INITIAL_SUPPLY - poolTokenBalance;
 
-        if (poolTokenBalance == INITIAL_SUPPLY || reserveBalance == 0) { // the token transfered to treasury not consider
-            return ethAmount * 1e3; // Initial exchange rate
+        if (circulatingSupply == 0 || reserveBalance == 0) { // the token transfered to treasury not consider
+            return ethAmount * 1e18 / initialTokenPrice; // Initial exchange rate
         }
 
         // Formula: supply * ((1 + deposit/reserve)^(reserveRatio/100) - 1)
