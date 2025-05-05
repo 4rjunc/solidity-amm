@@ -59,15 +59,15 @@ contract BondingCurvePool is ERC20 {
 
     // Calculate how much ETH will be returned for a given token amount
     function calculateSellReturn(uint256 tokenAmount) public view returns (uint256) {
+        uint256 poolTokenBalance = balanceOf(address(this));
+        uint256 circulatingSupply = INITIAL_SUPPLY - poolTokenBalance;
+
         require(totalSupply() > 0, "No tokens in circulation");
         require(tokenAmount <= totalSupply(), "Not enough tokens in circulation");
         
-        uint256 currentSupply = totalSupply();
-        uint256 currentReserve = reserveBalance;
-        
         // Formula: reserve * (1 - (1 - tokenAmount/supply)^(100/reserveRatio))
         // We simplify for small sales: eth = tokens * reserve * reserveRatio/100 / supply
-        return (tokenAmount * currentReserve * reserveRatio / 100) / currentSupply;
+        return (tokenAmount * reserveBalance * reserveRatio / 100) / circulatingSupply;
     }
 
     // Buy tokens with ETH
