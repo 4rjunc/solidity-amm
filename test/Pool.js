@@ -2,19 +2,16 @@ const { ethers } = require("hardhat");
 const { expect } = require("chai");
 
 describe("BondingCurvePool", () => {
-  let pool, owner, buyer;
+  let pool, owner, buyer, treasury;
   const reserveRatio = 20; // 20% reserve ratio
 
   beforeEach(async () => {
-    [owner, buyer] = await ethers.getSigners();
+    [owner, buyer, treasury] = await ethers.getSigners();
     const BondingCurvePool = await ethers.getContractFactory("BondingCurvePool");
-    pool = await BondingCurvePool.deploy("Bonding Token", "BOND", reserveRatio, owner); //owner gets the 20% minted tokens
+    pool = await BondingCurvePool.deploy("Bonding Token", "BOND", reserveRatio, treasury.address); //owner gets the 20% minted tokens
 
     // Add some initial liquidity
-    await owner.sendTransaction({
-      to: await pool.getAddress(),
-      value: ethers.parseEther("10.0")
-    });
+    await pool.connect(owner).addLiquidity({ value: ethers.parseEther("10.0") });
   });
 
   it("should properly handle buy and sell operations", async () => {

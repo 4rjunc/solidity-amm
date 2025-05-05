@@ -48,10 +48,10 @@ contract BondingCurvePool is ERC20 {
         uint256 poolTokenBalance = balanceOf(address(this));
         uint256 circulatingSupply = INITIAL_SUPPLY - poolTokenBalance;
 
-        if (poolTokenBalance == INITIAL_SUPPLY) { // the token transfered to treasury not consider
+        if (poolTokenBalance == INITIAL_SUPPLY || reserveBalance == 0) { // the token transfered to treasury not consider
             return ethAmount * 1e3; // Initial exchange rate
         }
-        
+
         // Formula: supply * ((1 + deposit/reserve)^(reserveRatio/100) - 1)
         // We simplify for small purchases: tokens = deposit * supply / (reserve * reserveRatio/100)
         return (ethAmount * circulatingSupply) / (reserveBalance * reserveRatio / 100);
@@ -64,6 +64,7 @@ contract BondingCurvePool is ERC20 {
 
         require(totalSupply() > 0, "No tokens in circulation");
         require(tokenAmount <= totalSupply(), "Not enough tokens in circulation");
+        require(reserveBalance > 0, "No ETH in reserve");
         
         // Formula: reserve * (1 - (1 - tokenAmount/supply)^(100/reserveRatio))
         // We simplify for small sales: eth = tokens * reserve * reserveRatio/100 / supply
@@ -108,5 +109,10 @@ contract BondingCurvePool is ERC20 {
         } else {
             reserveBalance += msg.value;
         }
+    }
+
+    // Fund the contract with initial ETH without buying tokens
+    function addLiquidity() external payable {
+        reserveBalance += msg.value;
     }
 }
