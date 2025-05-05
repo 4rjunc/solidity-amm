@@ -33,7 +33,10 @@ contract BondingCurvePool is ERC20 {
     }
 
     function calculateCurrentPrice() public view returns (uint256) {
-        if (totalSupply() == 0) {
+        uint256 poolTokenBalance = balanceOf(address(this));
+        uint256 circulatingSupply = INITIAL_SUPPLY - poolTokenBalance;
+
+        if (circulatingSupply == 0) {
             return 1e15; // Initial price of 0.001 ETH per token
         }
         
