@@ -10,6 +10,7 @@ contract BondingCurvePool is ERC20 {
 
     uint256 public reserveBalance;
     uint256 public reserveRatio; 
+    uint256 public constant INITIAL_SUPPLY = 1_000_000_000 * 1e18; // 1 Billion tokens with 18 decimals
     
     event TokensPurchased(address indexed buyer, uint256 amountEth, uint256 amountTokens);
     event TokensSold(address indexed seller, uint256 amountTokens, uint256 amountEth);
@@ -17,10 +18,18 @@ contract BondingCurvePool is ERC20 {
     constructor(
         string memory name,
         string memory symbol,
-        uint256 _reserveRatio
+        uint256 _reserveRatio,
+        address treasury
     ) ERC20(name, symbol) {
         require(_reserveRatio > 0 && _reserveRatio <= 100, "Reserve ratio must be between 1-100");
         reserveRatio = _reserveRatio;
+
+        // Mint token
+        _mint(address(this), INITIAL_SUPPLY);
+
+        // OPTIONAL: token transfer to treasury for team/marketing etc 
+        uint256 treasuryAmount = INITIAL_SUPPLY * 20/100;
+        _transfer(address(this), treasury, treasuryAmount);
     }
 
     function calculateCurrentPrice() public view returns (uint256) {
