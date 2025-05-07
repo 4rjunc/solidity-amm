@@ -76,15 +76,9 @@ contract BondingCurvePool is ERC20 {
         constant_k = (virtualEthReserve * virtualTokenReserve) / 1e18;
     }
 
+    // current token price based on virtual reserves
     function calculateCurrentPrice() public view returns (uint256) {
-        uint256 poolTokenBalance = balanceOf(address(this));
-        uint256 circulatingSupply = INITIAL_SUPPLY - poolTokenBalance;
-
-        if (circulatingSupply == 0 || reserveBalance == 0) {
-            return initialTokenPrice; // Initial price of 0.001 ETH per token
-        }
-        
-        return (reserveBalance * 1e18) / (totalSupply() * reserveRatio / 100);
+        return (virtualEthReserve * 1e18) / virtualTokenReserve;
     }
 
     // Calculate how many tokens will be minted for a given ETH amount
