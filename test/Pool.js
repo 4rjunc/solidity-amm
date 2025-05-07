@@ -1,3 +1,8 @@
+// TODO
+// beautify the prints
+// mock trade till bonding curve
+// setup indexer for buy/sell graph
+
 const { ethers } = require("hardhat");
 const { expect } = require("chai");
 
@@ -73,10 +78,10 @@ describe("BondingCurvePool", () => {
     const buyAmount = ethers.parseEther("0.05"); // Buy with 0.05 ETH
     const expectedTokens = await pool.calculateBuyReturn(buyAmount);
     console.log("Expected tokens to receive:", ethers.formatUnits(expectedTokens, 18));
-    
+
     const currentPriceAfterBuy = await pool.calculateCurrentPrice();
     console.log("- Current Token Price After Buy:", ethers.formatEther(currentPrice));
-    
+
     await pool.connect(buyer).buy({ value: buyAmount });
 
     // Check post-purchase state
@@ -246,5 +251,84 @@ describe("BondingCurvePool", () => {
     console.log("Initial K:", ethers.formatEther(initialK));
     console.log("Updated K:", ethers.formatEther(updatedK));
     expect(updatedK).to.be.closeTo(initialK, ethers.parseUnits("0.0001", 18));
+  });
+
+  it("should demonstrate price changes with multiple buys", async () => {
+    console.log("\n--- MULTIPLE BUYS PRICE IMPACT TEST ---");
+
+    // Initial state
+    const initialPrice = await pool.calculateCurrentPrice();
+    console.log("\nInitial Price:", ethers.formatEther(initialPrice), "ETH/token");
+
+    // Array of buy amounts to test
+    const buyAmounts = [
+      ethers.parseEther("0.01"),  // 0.01 ETH
+      ethers.parseEther("0.02"),  // 0.02 ETH
+      ethers.parseEther("0.03"),  // 0.03 ETH
+      ethers.parseEther("0.04"),  // 0.04 ETH
+      ethers.parseEther("0.05"),  // 0.05 ETH
+      ethers.parseEther("0.06"),  // 0.06 ETH
+      ethers.parseEther("0.07"),  // 0.07 ETH
+      ethers.parseEther("0.08"),  // 0.08 ETH
+      ethers.parseEther("0.09"),  // 0.09 ETH
+      ethers.parseEther("0.1"),   // 0.1 ETH
+      ethers.parseEther("0.15"),  // 0.15 ETH
+      ethers.parseEther("0.2"),   // 0.2 ETH
+      ethers.parseEther("0.25"),  // 0.25 ETH
+      ethers.parseEther("0.3"),   // 0.3 ETH
+      ethers.parseEther("0.35"),  // 0.35 ETH
+      ethers.parseEther("0.4"),   // 0.4 ETH
+      ethers.parseEther("0.45"),  // 0.45 ETH
+      ethers.parseEther("0.5"),   // 0.5 ETH
+      ethers.parseEther("0.55"),  // 0.55 ETH
+      ethers.parseEther("0.6")    // 0.6 ETH
+    ];
+
+    let totalTokensBought = 0n;
+    let totalEthSpent = 0n;
+
+    console.log("\nBuy # | ETH Amount | Tokens Received | Price After Buy | Total Tokens | Total ETH Spent");
+    console.log("------|------------|-----------------|-----------------|--------------|----------------");
+
+    for (let i = 0; i < buyAmounts.length; i++) {
+      const buyAmount = buyAmounts[i];
+
+      // Calculate expected tokens before buying
+      const expectedTokens = await pool.calculateBuyReturn(buyAmount);
+
+      // Get price before buy
+      const priceBeforeBuy = await pool.calculateCurrentPrice();
+
+      // Perform the buy
+      await pool.connect(buyer).buy({ value: buyAmount });
+
+      // Get price after buy
+      const priceAfterBuy = await pool.calculateCurrentPrice();
+
+      // Update totals
+      totalTokensBought += expectedTokens;
+      totalEthSpent += buyAmount;
+
+      // Format and print the results
+      console.log(
+        `${(i + 1).toString().padStart(4)} | ` +
+        `${ethers.formatEther(buyAmount).padStart(10)} | ` +
+        `${ethers.formatUnits(expectedTokens, 18).padStart(15)} | ` +
+        `${ethers.formatEther(priceAfterBuy).padStart(15)} | ` +
+        `${ethers.formatUnits(totalTokensBought, 18).padStart(12)} | ` +
+        `${ethers.formatEther(totalEthSpent).padStart(14)}`
+      );
+    }
+
+    // Print summary
+    console.log("\nSummary:");
+    console.log("Total ETH Spent:", ethers.formatEther(totalEthSpent), "ETH");
+    console.log("Total Tokens Bought:", ethers.formatUnits(totalTokensBought, 18), "tokens");
+    console.log("Average Price:", ethers.formatEther(totalEthSpent * BigInt(1e18) / totalTokensBought), "ETH/token");
+    console.log("Final Price:", ethers.formatEther(await pool.calculateCurrentPrice()), "ETH/token");
+    console.log("Price Increase:",
+      ((Number(await pool.calculateCurrentPrice()) - Number(initialPrice)) / Number(initialPrice) * 100).toFixed(2),
+      "%"
+    );
   });
 });
