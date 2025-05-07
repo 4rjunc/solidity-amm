@@ -8,33 +8,72 @@ import "@openzeppelin/contracts/utils/math/Math.sol";
 contract BondingCurvePool is ERC20 {
     using Math for uint256;
 
-    uint256 public reserveBalance;
-    uint256 public reserveRatio; 
+    // Constants
     uint256 public constant INITIAL_SUPPLY = 1_000_000_000 * 1e18; // 1 Billion tokens with 18 decimals
+    uint256 public constant MIN_LOTTERY_POOL = 1 ether; // 1 ETH minimum
+    uint256 public constant MAX_LOTTERY_POOL = 10_000 ether; // 10,000 ETH maximum
+    uint256 public constant MIN_BUY = 0.01 ether; // Minimum purchase
+    uint256 public constant SCALE_FACTOR = 96; // 0.96 scaling factor (96/100)
+    uint256 public constant SCALE_DENOMINATOR = 100;
+
+    // State variables
     uint256 public initialTokenPrice;
-    
+    uint256 public lotteryPool;
+    uint256 public ethRaised;
+    uint256 public constant_k; // The K in the constant product formula
+    uint256 public migrated_supply;    
+
+    // Virtual reserves (calculated values)
+    uint256 public virtualTokenReserve;
+    uint256 public virtualEthReserve;
+
     event TokensPurchased(address indexed buyer, uint256 amountEth, uint256 amountTokens);
     event TokensSold(address indexed seller, uint256 amountTokens, uint256 amountEth);
+    event LotteryPoolUpdated(uint256 newLotteryPool);
 
     constructor(
         string memory name,
         string memory symbol,
-        uint256 _reserveRatio,
-        address _treasury,
-        uint256 _initialTokenPrice
+        uint256 _initialTokenPrice,
+        uint256 _initialLotteryPool,
+        address _treasury
     ) ERC20(name, symbol) {
-        require(_reserveRatio > 0 && _reserveRatio <= 100, "Reserve ratio must be between 1-100");
-        require(_initialTokenPrice > 0, "Initial price must be greater than 0");
 
-        reserveRatio = _reserveRatio;
+        require(_initialTokenPrice > 0, "Initial price must be greater than 0");
+        require(_initialLotteryPool >= MIN_LOTTERY_POOL, "Lottery pool too small");
+        require(_initialLotteryPool <= MAX_LOTTERY_POOL, "Lottery pool too large");
+        
         initialTokenPrice = _initialTokenPrice;
+        lotteryPool = _initialLotteryPool;
 
         // Mint token
         _mint(address(this), INITIAL_SUPPLY);
 
+        // Set the migrated supply (tokens not in the contract)
+        migrated_supply = INITIAL_SUPPLY - balanceOf(address(this));
+
         // OPTIONAL: token transfer to treasury for team/marketing etc 
         //uint256 treasuryAmount = INITIAL_SUPPLY * 20/100;
         //_transfer(address(this), treasury, treasuryAmount);
+
+        // Initialize virtual reserves
+        updateVirtualReserves();
+    }
+
+
+    // virtual reserves based on lottery pool
+    function updateVirtualReserves() public {
+        // Virtual token reserve = -2L / (P₀ - L/S_migrated)
+        uint256 denominator = initialTokenPrice - (lotteryPool * 1e18 / migrated_supply);
+
+        // To avoid dealing with negative numbers in Solidity, we rearrange the formula
+        virtualTokenReserve = (2 * lotteryPool * 1e18) / denominator;
+        
+        // Virtual ETH reserve = P₀ * V_TOKENS
+        virtualEthReserve = (initialTokenPrice * virtualTokenReserve) / 1e18;
+        
+        // Update constant k = V_ETH * V_TOKENS
+        constant_k = (virtualEthReserve * virtualTokenReserve) / 1e18;
     }
 
     function calculateCurrentPrice() public view returns (uint256) {
