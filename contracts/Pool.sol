@@ -5,7 +5,9 @@ pragma solidity 0.8.20;
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/utils/math/Math.sol";
 
-contract BondingCurvePool is ERC20 {
+import "./LaunchToken.sol";
+
+contract BondingCurvePool  {
     using Math for uint256;
 
     // Constants
@@ -22,6 +24,9 @@ contract BondingCurvePool is ERC20 {
     uint256 public ethRaised;
     uint256 public constant_k; // The K in the constant product formula
     uint256 public migrated_supply;
+
+    address public launchPad;
+    LaunchToken public token;
     
     // Virtual reserves (calculated values)
     uint256 public virtualTokenReserve;
@@ -32,28 +37,25 @@ contract BondingCurvePool is ERC20 {
     event LotteryPoolUpdated(uint256 newLotteryPool);
 
     constructor(
-        string memory name,
-        string memory symbol,
+        address _token,
         uint256 _initialTokenPrice,
         uint256 _initialLotteryPool,
-        address _treasury
-    ) ERC20(name, symbol) {
+        address _treasury,
+        uint256 _treasuryAmount,
+        address _launchPad
+    ) {
         require(_initialTokenPrice > 0, "Initial price must be greater than 0");
         require(_initialLotteryPool >= MIN_LOTTERY_POOL, "Lottery pool too small");
         require(_initialLotteryPool <= MAX_LOTTERY_POOL, "Lottery pool too large");
 
+        token = LaunchToken(_token);
         initialTokenPrice = _initialTokenPrice;
         lotteryPool = _initialLotteryPool;
-        
-        // Mint initial tokens to the contract
-        _mint(address(this), INITIAL_SUPPLY);
-        
-        // Optional: Set aside tokens for team/treasury
-        uint256 treasuryAmount = INITIAL_SUPPLY * 20/100; // 20% for team/treasury (200M tokens)
-        _transfer(address(this), _treasury, treasuryAmount);
+        launchPad = _launchPad;
         
         // Set the migrated supply (tokens not in the contract)
-        migrated_supply = treasuryAmount; // 200M tokens (20% of total)
+        // TODO: check this is needed or not 
+        migrated_supply = _treasuryAmount; // 200M tokens (20% of total)
         
         // Initialize virtual reserves
         updateVirtualReserves();
@@ -135,7 +137,7 @@ contract BondingCurvePool is ERC20 {
         
         uint256 tokensToTransfer = calculateBuyReturn(msg.value);
         require(tokensToTransfer > 0, "Would receive zero tokens");
-        require(tokensToTransfer <= balanceOf(address(this)), "Not enough tokens in the pool");
+        require(tokensToTransfer <= token.balanceOf(address(this)), "Not enough tokens in the pool");
         
         // Update state
         ethRaised += msg.value;
@@ -145,8 +147,8 @@ contract BondingCurvePool is ERC20 {
         virtualEthReserve += scaledEthAmount;
         virtualTokenReserve = (constant_k * 1e18) / virtualEthReserve;
         
-        // Transfer tokens to buyer
-        _transfer(address(this), msg.sender, tokensToTransfer);
+        // Transfer tokens from pool to buyer
+        require(token.transferFrom(address(this), msg.sender, tokensToTransfer), "Token transfer failed");
         
         emit TokensPurchased(msg.sender, msg.value, tokensToTransfer);
     }
@@ -154,19 +156,21 @@ contract BondingCurvePool is ERC20 {
     // Sell tokens to get ETH back
     function sell(uint256 tokenAmount) public {
         require(tokenAmount > 0, "Must sell more than 0 tokens");
-        require(balanceOf(msg.sender) >= tokenAmount, "Not enough tokens to sell");   
+        require(token.balanceOf(msg.sender) >= tokenAmount, "Not enough tokens to sell");   
 
         uint256 ethToReturn = calculateSellReturn(tokenAmount);
         require(ethToReturn > 0, "Would receive zero ETH");
         require(ethToReturn <= address(this).balance, "Contract has insufficient ETH");
         
-        // Update state
-        _transfer(msg.sender, address(this), tokenAmount);
         
         // Update virtual reserves for the sell operation
         uint256 scaledTokenAmount = (tokenAmount * SCALE_FACTOR) / SCALE_DENOMINATOR;
         virtualTokenReserve += scaledTokenAmount;
         virtualEthReserve = (constant_k * 1e18) / virtualTokenReserve;
+
+        // Transfer tokens from seller to pool
+        require(token.transferFrom(msg.sender, address(this), tokenAmount), "Token transfer failed");
+      
         
         // Transfer ETH to seller
         payable(msg.sender).transfer(ethToReturn);
@@ -174,13 +178,6 @@ contract BondingCurvePool is ERC20 {
         emit TokensSold(msg.sender, tokenAmount, ethToReturn);
     }
     
-    // Function to burn tokens (reduces supply without affecting curve math)
-    function burn(uint256 tokenAmount) public {
-        require(tokenAmount > 0, "Must burn more than 0 tokens");
-        require(balanceOf(msg.sender) >= tokenAmount, "Not enough tokens to burn");
-        
-        _burn(msg.sender, tokenAmount);
-    }
     
     // Fallback function to handle ETH transfers
     receive() external payable {
