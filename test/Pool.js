@@ -10,13 +10,13 @@ describe("Lauchpad", () => {
   let launchpad, token1, token1Address, token2, token2Address, owner, buyer, user2, treasury;
 
   // Constants for token creation
-  const TOKEN1_NAME = "First Test Token";
-  const TOKEN1_SYMBOL = "FTT";
+  const TOKEN1_NAME = "DOG Coin";
+  const TOKEN1_SYMBOL = "DOG";
   const TOKEN1_PRICE = ethers.parseEther("0.0001"); // 0.0001 ETH per token
   const TOKEN1_LOTTERY_POOL = ethers.parseEther("5"); // 5 ETH lottery pool
 
-  const TOKEN2_NAME = "Second Test Token";
-  const TOKEN2_SYMBOL = "STT";
+  const TOKEN2_NAME = "CAT Coin";
+  const TOKEN2_SYMBOL = "CAT";
   const TOKEN2_PRICE = ethers.parseEther("0.0002"); // 0.0002 ETH per token
   const TOKEN2_LOTTERY_POOL = ethers.parseEther("10"); // 10 ETH lottery pool
 
@@ -56,7 +56,7 @@ describe("Lauchpad", () => {
     //console.log("\nreceipt2:", receipt2);
 
     const tokens = await launchpad.getAllTokens();
-    console.log("\ntokens:", tokens);
+    //console.log("\ntokens:", tokens);
 
     token1Address = tokens[0][0];
     console.log("token1", token1Address);

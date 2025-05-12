@@ -50,6 +50,8 @@ contract BondingCurvePool is ERC20 {
         _mint(address(this), INITIAL_SUPPLY);
         
         // Optional: Set aside tokens for team/treasury
+       // uint256 treasuryAmount = INITIAL_SUPPLY * 20/100; // 20% for team/treasury (200M tokens)
+
         uint256 treasuryAmount = INITIAL_SUPPLY * 20/100; // 20% for team/treasury (200M tokens)
         _transfer(address(this), _treasury, treasuryAmount);
         
