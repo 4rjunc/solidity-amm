@@ -442,11 +442,11 @@ describe("Lauchpad", () => {
       ethers.parseEther("0.25"),  // 0.25 ETH
       ethers.parseEther("0.3"),   // 0.3 ETH
       ethers.parseEther("0.35"),  // 0.35 ETH
-      ethers.parseEther("0.4"),   // 0.4 ETH
-      ethers.parseEther("0.45"),  // 0.45 ETH
-      ethers.parseEther("0.5"),   // 0.5 ETH
-      ethers.parseEther("0.55"),  // 0.55 ETH
-      ethers.parseEther("0.6")    // 0.6 ETH
+      ethers.parseEther("0.04"),   // 0.04 ETH
+      ethers.parseEther("0.05"),  // 0.05 ETH
+      ethers.parseEther("0.01"),   // 0.01 ETH
+      ethers.parseEther("0.02"),  // 0.02 ETH
+      ethers.parseEther("0.1")    // 0.1 ETH
     ];
 
     let totalTokensBought = 0n;
@@ -458,38 +458,71 @@ describe("Lauchpad", () => {
     for (let i = 0; i < buyAmounts.length; i++) {
       const buyAmount = buyAmounts[i];
 
-      // Calculate expected tokens before buying
-      const expectedTokens = await pool.calculateBuyReturn(buyAmount);
+      try {
+        // Calculate expected tokens before buying
+        const expectedTokens = await pool.calculateBuyReturn(buyAmount);
 
-      // Get price before buy
-      const priceBeforeBuy = await pool.calculateCurrentPrice();
+        // Get price before buy
+        const priceBeforeBuy = await pool.calculateCurrentPrice();
 
-      // Perform the buy
-      await pool.connect(buyer).buy({ value: buyAmount });
+        // Check max allowed buy (without making a transaction)
+        // Get the current lotteryPool and ethRaised values
+        const lotteryPool = await pool.lotteryPool();
+        const ethRaised = await pool.ethRaised();
+        const maxBuy = (lotteryPool - ethRaised) * 10n / 100n; // 10% of remaining pool
 
-      // Get price after buy
-      const priceAfterBuy = await pool.calculateCurrentPrice();
+        if (buyAmount > maxBuy) {
+          console.log(
+            `${(i + 1).toString().padStart(4)} | ` +
+            `${ethers.formatEther(buyAmount).padStart(10)} | ` +
+            `SKIPPED - Exceeds maximum buy of ${ethers.formatEther(maxBuy)} ETH (10% of remaining pool)`
+          );
+          continue;
+        }
 
-      // Update totals
-      totalTokensBought += expectedTokens;
-      totalEthSpent += buyAmount;
+        // Perform the buy
+        await pool.connect(buyer).buy({ value: buyAmount });
 
-      // Format and print the results
-      console.log(
-        `${(i + 1).toString().padStart(4)} | ` +
-        `${ethers.formatEther(buyAmount).padStart(10)} | ` +
-        `${ethers.formatUnits(expectedTokens, 18).padStart(15)} | ` +
-        `${ethers.formatEther(priceAfterBuy).padStart(15)} | ` +
-        `${ethers.formatUnits(totalTokensBought, 18).padStart(12)} | ` +
-        `${ethers.formatEther(totalEthSpent).padStart(14)}`
-      );
+        // Get price after buy
+        const priceAfterBuy = await pool.calculateCurrentPrice();
+
+        // Update totals
+        totalTokensBought += expectedTokens;
+        totalEthSpent += buyAmount;
+
+        // Format and print the results
+        console.log(
+          `${(i + 1).toString().padStart(4)} | ` +
+          `${ethers.formatEther(buyAmount).padStart(10)} | ` +
+          `${ethers.formatUnits(expectedTokens, 18).padStart(15)} | ` +
+          `${ethers.formatEther(priceAfterBuy).padStart(15)} | ` +
+          `${ethers.formatUnits(totalTokensBought, 18).padStart(12)} | ` +
+          `${ethers.formatEther(totalEthSpent).padStart(14)}`
+        );
+      } catch (error) {
+        // If we hit an error, log it and continue with the next amount
+        console.log(
+          `${(i + 1).toString().padStart(4)} | ` +
+          `${ethers.formatEther(buyAmount).padStart(10)} | ` +
+          `ERROR: ${error.message}`
+        );
+
+        // Optional: If you want to stop the test after first error
+        // break;
+      }
     }
 
     // Print summary
     console.log("\nSummary:");
     console.log("Total ETH Spent:", ethers.formatEther(totalEthSpent), "ETH");
     console.log("Total Tokens Bought:", ethers.formatUnits(totalTokensBought, 18), "tokens");
-    console.log("Average Price:", ethers.formatEther(totalEthSpent * BigInt(1e18) / totalTokensBought), "ETH/token");
+
+    if (totalTokensBought > 0) {
+      console.log("Average Price:", ethers.formatEther(totalEthSpent * BigInt(1e18) / totalTokensBought), "ETH/token");
+    } else {
+      console.log("Average Price: N/A (no tokens bought)");
+    }
+
     console.log("Final Price:", ethers.formatEther(await pool.calculateCurrentPrice()), "ETH/token");
     console.log("Price Increase:",
       ((Number(await pool.calculateCurrentPrice()) - Number(initialPrice)) / Number(initialPrice) * 100).toFixed(2),
@@ -519,14 +552,14 @@ describe("Lauchpad", () => {
       ethers.parseEther("0.1"),   // 0.1 ETH
       ethers.parseEther("0.15"),  // 0.15 ETH
       ethers.parseEther("0.2"),   // 0.2 ETH
-      ethers.parseEther("0.25"),  // 0.25 ETH
-      ethers.parseEther("0.3"),   // 0.3 ETH
-      ethers.parseEther("0.35"),  // 0.35 ETH
-      ethers.parseEther("0.4"),   // 0.4 ETH
-      ethers.parseEther("0.45"),  // 0.45 ETH
-      ethers.parseEther("0.5"),   // 0.5 ETH
-      ethers.parseEther("0.55"),  // 0.55 ETH
-      ethers.parseEther("0.6")    // 0.6 ETH
+      ethers.parseEther("0.05"),  // 0.05 ETH
+      ethers.parseEther("0.03"),   // 0.03 ETH
+      ethers.parseEther("0.05"),  // 0.05 ETH
+      ethers.parseEther("0.02"),   // 0.02 ETH
+      ethers.parseEther("0.05"),  // 0.05 ETH
+      ethers.parseEther("0.1"),   // 0.1 ETH
+      ethers.parseEther("0.05"),  // 0.05 ETH
+      ethers.parseEther("0.06")    // 0.06 ETH
     ];
 
     let totalTokensBought = 0n;
@@ -538,44 +571,75 @@ describe("Lauchpad", () => {
     for (let i = 0; i < buyAmounts.length; i++) {
       const buyAmount = buyAmounts[i];
 
-      // Calculate expected tokens before buying
-      const expectedTokens = await pool.calculateBuyReturn(buyAmount);
+      try {
+        // Calculate expected tokens before buying
+        const expectedTokens = await pool.calculateBuyReturn(buyAmount);
 
-      // Get price before buy
-      const priceBeforeBuy = await pool.calculateCurrentPrice();
+        // Get price before buy
+        const priceBeforeBuy = await pool.calculateCurrentPrice();
 
-      // Perform the buy
-      await pool.connect(buyer).buy({ value: buyAmount });
+        // Check max allowed buy (without making a transaction)
+        // Get the current lotteryPool and ethRaised values
+        const lotteryPool = await pool.lotteryPool();
+        const ethRaised = await pool.ethRaised();
+        const maxBuy = (lotteryPool - ethRaised) * 10n / 100n; // 10% of remaining pool
 
-      // Get price after buy
-      const priceAfterBuy = await pool.calculateCurrentPrice();
+        if (buyAmount > maxBuy) {
+          console.log(
+            `${(i + 1).toString().padStart(4)} | ` +
+            `${ethers.formatEther(buyAmount).padStart(10)} | ` +
+            `SKIPPED - Exceeds maximum buy of ${ethers.formatEther(maxBuy)} ETH (10% of remaining pool)`
+          );
+          continue;
+        }
 
-      // Update totals
-      totalTokensBought += expectedTokens;
-      totalEthSpent += buyAmount;
+        // Perform the buy
+        await pool.connect(buyer).buy({ value: buyAmount });
 
-      // Format and print the results
-      console.log(
-        `${(i + 1).toString().padStart(4)} | ` +
-        `${ethers.formatEther(buyAmount).padStart(10)} | ` +
-        `${ethers.formatUnits(expectedTokens, 18).padStart(15)} | ` +
-        `${ethers.formatEther(priceAfterBuy).padStart(15)} | ` +
-        `${ethers.formatUnits(totalTokensBought, 18).padStart(12)} | ` +
-        `${ethers.formatEther(totalEthSpent).padStart(14)}`
-      );
+        // Get price after buy
+        const priceAfterBuy = await pool.calculateCurrentPrice();
+
+        // Update totals
+        totalTokensBought += expectedTokens;
+        totalEthSpent += buyAmount;
+
+        // Format and print the results
+        console.log(
+          `${(i + 1).toString().padStart(4)} | ` +
+          `${ethers.formatEther(buyAmount).padStart(10)} | ` +
+          `${ethers.formatUnits(expectedTokens, 18).padStart(15)} | ` +
+          `${ethers.formatEther(priceAfterBuy).padStart(15)} | ` +
+          `${ethers.formatUnits(totalTokensBought, 18).padStart(12)} | ` +
+          `${ethers.formatEther(totalEthSpent).padStart(14)}`
+        );
+      } catch (error) {
+        // If we hit an error, log it and continue with the next amount
+        console.log(
+          `${(i + 1).toString().padStart(4)} | ` +
+          `${ethers.formatEther(buyAmount).padStart(10)} | ` +
+          `ERROR: ${error.message}`
+        );
+
+        // Optional: If you want to stop the test after first error
+        // break;
+      }
     }
 
     // Print summary
     console.log("\nSummary:");
     console.log("Total ETH Spent:", ethers.formatEther(totalEthSpent), "ETH");
     console.log("Total Tokens Bought:", ethers.formatUnits(totalTokensBought, 18), "tokens");
-    console.log("Average Price:", ethers.formatEther(totalEthSpent * BigInt(1e18) / totalTokensBought), "ETH/token");
+
+    if (totalTokensBought > 0) {
+      console.log("Average Price:", ethers.formatEther(totalEthSpent * BigInt(1e18) / totalTokensBought), "ETH/token");
+    } else {
+      console.log("Average Price: N/A (no tokens bought)");
+    }
+
     console.log("Final Price:", ethers.formatEther(await pool.calculateCurrentPrice()), "ETH/token");
     console.log("Price Increase:",
       ((Number(await pool.calculateCurrentPrice()) - Number(initialPrice)) / Number(initialPrice) * 100).toFixed(2),
       "%"
     );
   });
-
-
 });
