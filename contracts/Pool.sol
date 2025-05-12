@@ -31,6 +31,7 @@ contract BondingCurvePool is ERC20 {
     event TokensSold(address indexed seller, uint256 amountTokens, uint256 amountEth);
     event LotteryPoolUpdated(uint256 newLotteryPool);
 
+    // TODO: try after removing memory keyword
     constructor(
         string memory name,
         string memory symbol,
@@ -49,6 +50,8 @@ contract BondingCurvePool is ERC20 {
         _mint(address(this), INITIAL_SUPPLY);
         
         // Optional: Set aside tokens for team/treasury
+       // uint256 treasuryAmount = INITIAL_SUPPLY * 20/100; // 20% for team/treasury (200M tokens)
+
         uint256 treasuryAmount = INITIAL_SUPPLY * 20/100; // 20% for team/treasury (200M tokens)
         _transfer(address(this), _treasury, treasuryAmount);
         
@@ -130,6 +133,12 @@ contract BondingCurvePool is ERC20 {
         require(msg.value >= MIN_BUY, "Below minimum buy amount");
         
         // Check against maximum buy limit
+        // What This Means
+        // Your contract is implementing a liquidity protection mechanism that prevents any single buyer 
+        // from consuming too much of the remaining pool in one transaction. This is a common practice to:
+        // 1. Prevent price manipulation by large buyers
+        // 2. Ensure fair distribution of tokens among many participants
+        // 3. Reduce the impact of "whales" on the token price
         uint256 maxBuy = (lotteryPool - ethRaised) * 10 / 100; // 10% of remaining pool
         require(msg.value <= maxBuy, "Exceeds maximum buy amount");
         
