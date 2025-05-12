@@ -31,6 +31,7 @@ contract BondingCurvePool is ERC20 {
     event TokensSold(address indexed seller, uint256 amountTokens, uint256 amountEth);
     event LotteryPoolUpdated(uint256 newLotteryPool);
 
+    // TODO: try after removing memory keyword
     constructor(
         string memory name,
         string memory symbol,
