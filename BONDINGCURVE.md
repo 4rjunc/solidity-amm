@@ -90,10 +90,10 @@ sequenceDiagram
 
 ```mermaid
 xychart-beta
-    title "Token Price vs. Supply"
-    x-axis "Token Supply (Decreasing →)"
+    title "Token Price vs. Token Supply in Pool"
+    x-axis "Token Supply in Pool (Decreasing →)"
     y-axis "Price per Token (ETH)"
-    line [10, 8, 6.5, 5, 4, 3, 2.4, 2, 1.6, 1.3, 1, 0.8, 0.6, 0.5, 0.4, 0.3]
+    line [0.3, 0.4, 0.5, 0.6, 0.8, 1.0, 1.3, 1.6, 2.0, 2.4, 3.0, 4.0, 5.0, 6.5, 8.0, 10.0]
 ```
 
 ## Lottery Pool Influence
