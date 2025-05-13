@@ -17,62 +17,7 @@ This project implements a token bonding curve - a mathematical concept used in d
 
 ## How It Works
 
-### Bonding Curve Explained
-
-A bonding curve is a mathematical function that defines the relationship between a token's price and its supply. In this implementation:
-
-- The token price increases as more tokens are minted
-- The token price decreases as tokens are burned
-- The price is determined by the formula: `price = reserveBalance / (totalSupply * reserveRatio/100)`
-
-This creates a predictable price movement based on token supply changes.
-
-#### Formula Visualization
-
-![Bonding Curve Example](https://i.imgur.com/XkfL0Y7.png)
-
-*Example of how a token price follows the bonding curve as supply changes*
-
-### Reserve Ratio
-
-The reserve ratio is a critical parameter that determines the slope of the bonding curve:
-
-- Lower reserve ratio (e.g., 10%) = steeper curve, more price volatility
-- Higher reserve ratio (e.g., 50%) = gradual curve, less price volatility
-
-Our implementation allows the reserve ratio to be set between 1-100%.
-
-### Price Determination
-
-The contract uses these formulas:
-
-1. **Current Price**: `(reserveBalance * 1e18) / (totalSupply * reserveRatio / 100)`
-2. **Buy Return**: `(ethAmount * currentSupply) / (currentReserve * reserveRatio / 100)`
-3. **Sell Return**: `(tokenAmount * currentReserve * reserveRatio / 100) / currentSupply`
-
-These are simplified versions of the Bancor formula for computational efficiency.
-
-## Example Scenarios
-
-### Scenario 1: Initial Purchase
-
-When the pool is empty:
-- Initial price is set to 0.001 ETH per token
-- Initial exchange rate is 1000 tokens per ETH
-
-### Scenario 2: Supply and Price Change
-
-After adding 10 ETH with a 20% reserve ratio:
-- If you buy 2 ETH worth of tokens
-- The price will increase due to increased supply
-- Selling tokens will decrease the price
-
-### Price Movement Visualization
-
-| Action                | Supply Change | Price Movement |
-|-----------------------|---------------|----------------|
-| Buy tokens with ETH   | ⬆️ Increases   | ⬆️ Increases    |
-| Sell tokens for ETH   | ⬇️ Decreases   | ⬇️ Decreases    |
+### [Bonding Curve Explained](./BONDINGCURVE.md) 
 
 ## Getting Started
 
