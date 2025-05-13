@@ -14,6 +14,7 @@ This project implements a token bonding curve - a mathematical concept used in d
 - Buy tokens with ETH
 - Sell tokens back for ETH
 - Automatic price calculation
+- Bonding Curve equation similar to pump.fun
 
 ## How It Works
 
