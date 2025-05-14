@@ -52,7 +52,7 @@ contract BondingCurvePool is ERC20 {
         // Optional: Set aside tokens for team/treasury
        // uint256 treasuryAmount = INITIAL_SUPPLY * 20/100; // 20% for team/treasury (200M tokens)
 
-        uint256 treasuryAmount = INITIAL_SUPPLY * 20/100; // 20% for team/treasury (200M tokens)
+        uint256 treasuryAmount = INITIAL_SUPPLY * 20/100; // 20% for team/treasury/to liquidity pool (200M tokens)
         _transfer(address(this), _treasury, treasuryAmount);
         
         // Set the migrated supply (tokens not in the contract)
