@@ -115,6 +115,23 @@ If someone buys with 2 ETH, they would receive:
 Tokens = 2 * 10000 / (10 * 20/100) = 10000 tokens
 ```
 
+## Chainlink VRF
+### Deploy
+```npx hardhat run scripts/vrf_deploy.js --network base_sepolia```
+
+then,
+### Test
+```npx hardhat test .\test\RandomWalletPicker.test.js --network base_sepolia```
+
+### Creating a Chainlink VRF Subscription
+
+1. Visit ![Chainlink VRF](https://vrf.chain.link/sepolia)
+2. Connect your wallet
+3. Click "Create Subscription"
+4. Fund your subscription with LINK tokens (minimum 2 LINK recommended)
+5. After deploying your contract, you'll need to add it as a consumer to your subscription.
+
+
 ## Security Considerations
 
 - The contract lacks slippage protection
