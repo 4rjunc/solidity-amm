@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 
-pragma solidity 0.8.20;
+pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/utils/math/Math.sol";
@@ -10,9 +10,9 @@ contract BondingCurvePool is ERC20 {
 
     // Constants
     uint256 public constant INITIAL_SUPPLY = 1_000_000_000 * 1e18; // 1 Billion tokens with 18 decimals
-    uint256 public constant MIN_LOTTERY_POOL = 1 ether; // 1 ETH minimum
+    uint256 public constant MIN_LOTTERY_POOL = 0.05 ether; // 0.05 ETH minimum
     uint256 public constant MAX_LOTTERY_POOL = 10_000 ether; // 10,000 ETH maximum
-    uint256 public constant MIN_BUY = 0.01 ether; // Minimum purchase
+    uint256 public constant MIN_BUY = 0.001 ether; // Minimum purchase
     uint256 public constant SCALE_FACTOR = 96; // 0.96 scaling factor (96/100)
     uint256 public constant SCALE_DENOMINATOR = 100;
 
