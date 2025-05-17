@@ -15,6 +15,10 @@ describe("Lauchpad", () => {
   const TOKEN1_PRICE = ethers.parseEther("0.0001"); // 0.0001 ETH per token
   const TOKEN1_LOTTERY_POOL = ethers.parseEther("5"); // 5 ETH lottery pool
 
+  console.log("TOKEN1_PRICE", TOKEN1_PRICE);
+  console.log("TOKEN1_LOTTERY_POOL", TOKEN1_LOTTERY_POOL);
+
+
   const TOKEN2_NAME = "CAT Coin";
   const TOKEN2_SYMBOL = "CAT";
   const TOKEN2_PRICE = ethers.parseEther("0.0002"); // 0.0002 ETH per token
