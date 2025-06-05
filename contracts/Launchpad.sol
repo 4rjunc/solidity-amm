@@ -29,12 +29,11 @@ contract TokenLaunchpad is Ownable {
     function launchToken(
         string memory name,
         string memory symbol,
-        uint256 initialTokenPrice,
         uint256 initialLotteryPool
      ) public returns (address) {
 
        //change to initialOwer or a multisig wallet
-       BondingCurvePool  newToken = new BondingCurvePool(name, symbol, initialTokenPrice, initialLotteryPool, address(this));
+       BondingCurvePool newToken = new BondingCurvePool(name, symbol, initialLotteryPool);
 
        TokenInfo memory tokenInfo = TokenInfo({
          tokenAddress: address(newToken),

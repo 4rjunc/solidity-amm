@@ -12,16 +12,13 @@ describe("Lauchpad", () => {
   // Constants for token creation
   const TOKEN1_NAME = "DOG Coin";
   const TOKEN1_SYMBOL = "DOG";
-  const TOKEN1_PRICE = ethers.parseEther("0.0001"); // 0.0001 ETH per token
   const TOKEN1_LOTTERY_POOL = ethers.parseEther("5"); // 5 ETH lottery pool
 
-  console.log("TOKEN1_PRICE", TOKEN1_PRICE);
   console.log("TOKEN1_LOTTERY_POOL", TOKEN1_LOTTERY_POOL);
 
 
   const TOKEN2_NAME = "CAT Coin";
   const TOKEN2_SYMBOL = "CAT";
-  const TOKEN2_PRICE = ethers.parseEther("0.0002"); // 0.0002 ETH per token
   const TOKEN2_LOTTERY_POOL = ethers.parseEther("10"); // 10 ETH lottery pool
 
   // Given parameters
@@ -41,8 +38,8 @@ describe("Lauchpad", () => {
     const tx1 = await launchpad.launchToken(
       TOKEN1_NAME,
       TOKEN1_SYMBOL,
-      TOKEN1_PRICE,
       TOKEN1_LOTTERY_POOL,
+      treasury.address // Pass treasury address instead of price
     );
 
     const receipt1 = await tx1.wait();
@@ -50,8 +47,8 @@ describe("Lauchpad", () => {
     const tx2 = await launchpad.launchToken(
       TOKEN2_NAME,
       TOKEN2_SYMBOL,
-      TOKEN2_PRICE,
-      TOKEN2_LOTTERY_POOL
+      TOKEN2_LOTTERY_POOL,
+      treasury.address // Pass treasury address instead of price
     );
 
     const receipt2 = await tx2.wait();
@@ -96,21 +93,23 @@ describe("Lauchpad", () => {
     const virtualEthReserve = await token1.virtualEthReserve();
     const constantK = await token1.constant_k();
     const lotteryPool = await token1.lotteryPool();
+    const initialPriceFromContract = await token1.initialTokenPrice(); // Get the internally calculated price
 
     console.log("Token 1");
     console.log("- Virtual Token Reserve:", ethers.formatUnits(virtualTokenReserve, 18));
     console.log("- Virtual ETH Reserve:", ethers.formatEther(virtualEthReserve));
     console.log("- Constant K:", ethers.formatEther(constantK));
     console.log("- Lottery Pool:", ethers.formatEther(lotteryPool));
+    console.log("- Initial Token Price (from contract):", ethers.formatEther(initialPriceFromContract));
 
     // Verify constant product formula
     const calculatedK = (virtualTokenReserve * virtualEthReserve) / ethers.parseUnits("1", 18);
     expect(calculatedK).to.be.closeTo(constantK, ethers.parseUnits("1", 10)); // Allow small rounding difference
 
-    // Verify current price
+    // Verify current price (should match the initialTokenPrice from contract now)
     const currentPrice = await token1.calculateCurrentPrice();
-    console.log("- Current Token Price:", ethers.formatEther(TOKEN1_PRICE));
-    expect(currentPrice).to.be.closeTo(TOKEN1_PRICE, ethers.parseUnits("0.0000001", 18));
+    console.log("- Current Token Price (matches initial):", ethers.formatEther(currentPrice));
+    expect(currentPrice).to.be.closeTo(initialPriceFromContract, ethers.parseUnits("0.000000000000001", 18)); // Adjust precision as needed
   });
 
   it("TOKEN 2", async () => {
@@ -121,21 +120,23 @@ describe("Lauchpad", () => {
     const virtualEthReserve = await token2.virtualEthReserve();
     const constantK = await token2.constant_k();
     const lotteryPool = await token2.lotteryPool();
+    const initialPriceFromContract = await token2.initialTokenPrice(); // Get the internally calculated price
 
     console.log("Token 2");
     console.log("- Virtual Token Reserve:", ethers.formatUnits(virtualTokenReserve, 18));
     console.log("- Virtual ETH Reserve:", ethers.formatEther(virtualEthReserve));
     console.log("- Constant K:", ethers.formatEther(constantK));
     console.log("- Lottery Pool:", ethers.formatEther(lotteryPool));
+    console.log("- Initial Token Price (from contract):", ethers.formatEther(initialPriceFromContract));
 
     // Verify constant product formula
     const calculatedK = (virtualTokenReserve * virtualEthReserve) / ethers.parseUnits("1", 18);
     expect(calculatedK).to.be.closeTo(constantK, ethers.parseUnits("1", 10)); // Allow small rounding difference
 
-    // Verify current price
+    // Verify current price (should match the initialTokenPrice from contract now)
     const currentPrice = await token2.calculateCurrentPrice();
-    console.log("- Current Token Price:", ethers.formatEther(TOKEN2_PRICE));
-    expect(currentPrice).to.be.closeTo(TOKEN2_PRICE, ethers.parseUnits("0.0000002", 18));
+    console.log("- Current Token Price (matches initial):", ethers.formatEther(currentPrice));
+    expect(currentPrice).to.be.closeTo(initialPriceFromContract, ethers.parseUnits("0.000000000000001", 18)); // Adjust precision
   });
 
   it("Token 1 handle buy and sell operations", async () => {
@@ -143,7 +144,7 @@ describe("Lauchpad", () => {
     const pool = await ethers.getContractAt("BondingCurvePool", token1Address);
     //console.log("token1", token1);
     const initialSupply = await pool.totalSupply();
-    const initialPrice = await pool.calculateCurrentPrice();
+    const initialPrice = await pool.initialTokenPrice(); // Use the stored initial price
     const initialVirtualTokens = await pool.virtualTokenReserve();
     const initialVirtualEth = await pool.virtualEthReserve();
 
@@ -153,32 +154,71 @@ describe("Lauchpad", () => {
     console.log("Initial Virtual ETH:", ethers.formatEther(initialVirtualEth));
 
     const currentPrice = await pool.calculateCurrentPrice();
-    console.log("-Current Token Price:", ethers.formatEther(currentPrice));
+    console.log("-Current Token Price (should match initial):", ethers.formatEther(currentPrice));
+    expect(currentPrice).to.be.closeTo(initialPrice, ethers.parseUnits("0.000000000000001", 18));
 
     // Buyer purchases tokens
     console.log("\n--- BUYING TOKENS ---");
-    const buyAmount = ethers.parseEther("0.05"); // Buy with 0.05 ETH
-    const expectedTokens = await pool.calculateBuyReturn(buyAmount);
-    console.log("Expected tokens to receive:", ethers.formatUnits(expectedTokens, 18));
+    // Adjust netEthForCurve calculation based on new fee structure in Pool.sol if needed
+    // For now, assuming calculateBuyReturn correctly handles this internally if fees are deducted before calculation.
+    // If calculateBuyReturn expects gross ETH, the test is fine.
+    // The Pool.sol buy() function calculates netEthForCurve from msg.value, and then calls calculateBuyReturn(netEthForCurve).
+    // So, we should calculate expected tokens based on netEthForCurve.
 
-    const currentPriceAfterBuy = await pool.calculateCurrentPrice();
-    console.log("- Current Token Price After Buy:", ethers.formatEther(currentPrice));
+    const grossBuyAmount = ethers.parseEther("0.05"); // Buyer sends 0.05 ETH
 
-    await pool.connect(buyer).buy({ value: buyAmount });
+    // Simulate fee calculation to get netEthForCurve for calculateBuyReturn
+    const LOTTERY_POOL_FEE_NUMERATOR = 30n;
+    const LOTTERY_POOL_FEE_DENOMINATOR = 100n;
+    const HOLDER_POOL_FEE_NUMERATOR = 111n;
+    const HOLDER_POOL_FEE_DENOMINATOR = 10000n;
+    const PROTOCOL_POOL_FEE_NUMERATOR = 111n;
+    const PROTOCOL_POOL_FEE_DENOMINATOR = 10000n;
+    const DEV_FEE_NUMERATOR = 111n;
+    const DEV_FEE_DENOMINATOR = 10000n;
+
+    let totalFeesPaid = 0n;
+    const isLotteryTaxActive = await pool.isLotteryTaxActive(); // Check current status
+    if (isLotteryTaxActive) {
+        const lotteryFee = (grossBuyAmount * LOTTERY_POOL_FEE_NUMERATOR) / LOTTERY_POOL_FEE_DENOMINATOR;
+        totalFeesPaid += lotteryFee;
+    }
+    const holderFee = (grossBuyAmount * HOLDER_POOL_FEE_NUMERATOR) / HOLDER_POOL_FEE_DENOMINATOR;
+    totalFeesPaid += holderFee;
+    const protocolFee = (grossBuyAmount * PROTOCOL_POOL_FEE_NUMERATOR) / PROTOCOL_POOL_FEE_DENOMINATOR;
+    totalFeesPaid += protocolFee;
+    const devFee = (grossBuyAmount * DEV_FEE_NUMERATOR) / DEV_FEE_DENOMINATOR;
+    totalFeesPaid += devFee;
+
+    const netEthForCurve = grossBuyAmount - totalFeesPaid;
+    console.log("Gross ETH for buy:", ethers.formatEther(grossBuyAmount));
+    console.log("Total fees estimated:", ethers.formatEther(totalFeesPaid));
+    console.log("Net ETH for curve:", ethers.formatEther(netEthForCurve));
+
+    const expectedTokens = await pool.calculateBuyReturn(netEthForCurve);
+    console.log("Expected tokens to receive (for net ETH):", ethers.formatUnits(expectedTokens, 18));
+
+    // Price before this specific buy transaction
+    const priceBeforeThisBuy = await pool.calculateCurrentPrice(); 
+    console.log("- Price just before this buy:", ethers.formatEther(priceBeforeThisBuy));
+
+    await pool.connect(buyer).buy({ value: grossBuyAmount });
 
     // Check post-purchase state
     const buyerBalance = await pool.balanceOf(buyer.address);
     const priceAfterBuy = await pool.calculateCurrentPrice();
     const virtualTokensAfterBuy = await pool.virtualTokenReserve();
     const virtualEthAfterBuy = await pool.virtualEthReserve();
+    const ethRaisedAfterBuy = await pool.ethRaised();
 
     console.log("Tokens Purchased:", ethers.formatUnits(buyerBalance, 18));
     console.log("Price After Buy:", ethers.formatEther(priceAfterBuy));
     console.log("Virtual Tokens After Buy:", ethers.formatUnits(virtualTokensAfterBuy, 18));
     console.log("Virtual ETH After Buy:", ethers.formatEther(virtualEthAfterBuy));
+    console.log("ETH Raised by curve after buy:", ethers.formatEther(ethRaisedAfterBuy));
 
     // Verify price increased after purchase
-    expect(priceAfterBuy).to.be.gt(initialPrice);
+    expect(priceAfterBuy).to.be.gt(priceBeforeThisBuy); // Compare with price just before this buy
 
     // Verify tokens received matches calculation
     expect(buyerBalance).to.equal(expectedTokens);
@@ -188,7 +228,7 @@ describe("Lauchpad", () => {
     const sellAmount = buyerBalance / 2n;
     const expectedEth = await pool.calculateSellReturn(sellAmount);
     console.log("Tokens to sell:", ethers.formatUnits(sellAmount, 18));
-    console.log("Expected ETH to receive:", ethers.formatEther(expectedEth));
+    console.log("Expected ETH to receive (gross, before any sell fees if they existed):", ethers.formatEther(expectedEth));
 
     // Get ETH balance before sale
     const ethBalanceBefore = await ethers.provider.getBalance(buyer.address);
@@ -206,12 +246,14 @@ describe("Lauchpad", () => {
     const priceAfterSell = await pool.calculateCurrentPrice();
     const virtualTokensAfterSell = await pool.virtualTokenReserve();
     const virtualEthAfterSell = await pool.virtualEthReserve();
+    const ethRaisedAfterSell = await pool.ethRaised(); // Check ethRaised after sell
 
     console.log("Remaining Tokens:", ethers.formatUnits(balanceAfterSell, 18));
     console.log("ETH Received (calculated from balance):", ethers.formatEther(ethBalanceAfter - ethBalanceBefore + gasCost));
     console.log("Price After Sell:", ethers.formatEther(priceAfterSell));
     console.log("Virtual Tokens After Sell:", ethers.formatUnits(virtualTokensAfterSell, 18));
     console.log("Virtual ETH After Sell:", ethers.formatEther(virtualEthAfterSell));
+    console.log("ETH Raised by curve after sell:", ethers.formatEther(ethRaisedAfterSell));
 
     // Verify price decreased after selling
     expect(priceAfterSell).to.be.lt(priceAfterBuy);
@@ -228,7 +270,7 @@ describe("Lauchpad", () => {
     const pool = await ethers.getContractAt("BondingCurvePool", token2Address);
     //console.log("token1", token1);
     const initialSupply = await pool.totalSupply();
-    const initialPrice = await pool.calculateCurrentPrice();
+    const initialPrice = await pool.initialTokenPrice(); // Use the stored initial price
     const initialVirtualTokens = await pool.virtualTokenReserve();
     const initialVirtualEth = await pool.virtualEthReserve();
 
@@ -238,32 +280,64 @@ describe("Lauchpad", () => {
     console.log("Initial Virtual ETH:", ethers.formatEther(initialVirtualEth));
 
     const currentPrice = await pool.calculateCurrentPrice();
-    console.log("-Current Token Price:", ethers.formatEther(currentPrice));
+    console.log("-Current Token Price (should match initial):", ethers.formatEther(currentPrice));
+    expect(currentPrice).to.be.closeTo(initialPrice, ethers.parseUnits("0.000000000000001", 18));
 
     // Buyer purchases tokens
     console.log("\n--- BUYING TOKENS ---");
-    const buyAmount = ethers.parseEther("0.05"); // Buy with 0.05 ETH
-    const expectedTokens = await pool.calculateBuyReturn(buyAmount);
-    console.log("Expected tokens to receive:", ethers.formatUnits(expectedTokens, 18));
+    const grossBuyAmount = ethers.parseEther("0.05"); // Buyer sends 0.05 ETH
 
-    const currentPriceAfterBuy = await pool.calculateCurrentPrice();
-    console.log("- Current Token Price After Buy:", ethers.formatEther(currentPrice));
+    // Simulate fee calculation to get netEthForCurve
+    const LOTTERY_POOL_FEE_NUMERATOR = 30n;
+    const LOTTERY_POOL_FEE_DENOMINATOR = 100n;
+    const HOLDER_POOL_FEE_NUMERATOR = 111n;
+    const HOLDER_POOL_FEE_DENOMINATOR = 10000n;
+    const PROTOCOL_POOL_FEE_NUMERATOR = 111n;
+    const PROTOCOL_POOL_FEE_DENOMINATOR = 10000n;
+    const DEV_FEE_NUMERATOR = 111n;
+    const DEV_FEE_DENOMINATOR = 10000n;
 
-    await pool.connect(buyer).buy({ value: buyAmount });
+    let totalFeesPaid = 0n;
+    const isLotteryTaxActive = await pool.isLotteryTaxActive(); // Check current status
+    if (isLotteryTaxActive) {
+        const lotteryFee = (grossBuyAmount * LOTTERY_POOL_FEE_NUMERATOR) / LOTTERY_POOL_FEE_DENOMINATOR;
+        totalFeesPaid += lotteryFee;
+    }
+    const holderFee = (grossBuyAmount * HOLDER_POOL_FEE_NUMERATOR) / HOLDER_POOL_FEE_DENOMINATOR;
+    totalFeesPaid += holderFee;
+    const protocolFee = (grossBuyAmount * PROTOCOL_POOL_FEE_NUMERATOR) / PROTOCOL_POOL_FEE_DENOMINATOR;
+    totalFeesPaid += protocolFee;
+    const devFee = (grossBuyAmount * DEV_FEE_NUMERATOR) / DEV_FEE_DENOMINATOR;
+    totalFeesPaid += devFee;
+    
+    const netEthForCurve = grossBuyAmount - totalFeesPaid;
+    console.log("Gross ETH for buy:", ethers.formatEther(grossBuyAmount));
+    console.log("Total fees estimated:", ethers.formatEther(totalFeesPaid));
+    console.log("Net ETH for curve:", ethers.formatEther(netEthForCurve));
+
+    const expectedTokens = await pool.calculateBuyReturn(netEthForCurve);
+    console.log("Expected tokens to receive (for net ETH):", ethers.formatUnits(expectedTokens, 18));
+
+    const priceBeforeThisBuy = await pool.calculateCurrentPrice();
+    console.log("- Price just before this buy:", ethers.formatEther(priceBeforeThisBuy));
+
+    await pool.connect(buyer).buy({ value: grossBuyAmount });
 
     // Check post-purchase state
     const buyerBalance = await pool.balanceOf(buyer.address);
     const priceAfterBuy = await pool.calculateCurrentPrice();
     const virtualTokensAfterBuy = await pool.virtualTokenReserve();
     const virtualEthAfterBuy = await pool.virtualEthReserve();
+    const ethRaisedAfterBuy = await pool.ethRaised();
 
     console.log("Tokens Purchased:", ethers.formatUnits(buyerBalance, 18));
     console.log("Price After Buy:", ethers.formatEther(priceAfterBuy));
     console.log("Virtual Tokens After Buy:", ethers.formatUnits(virtualTokensAfterBuy, 18));
     console.log("Virtual ETH After Buy:", ethers.formatEther(virtualEthAfterBuy));
+    console.log("ETH Raised by curve after buy:", ethers.formatEther(ethRaisedAfterBuy));
 
     // Verify price increased after purchase
-    expect(priceAfterBuy).to.be.gt(initialPrice);
+    expect(priceAfterBuy).to.be.gt(priceBeforeThisBuy);
 
     // Verify tokens received matches calculation
     expect(buyerBalance).to.equal(expectedTokens);
@@ -273,7 +347,7 @@ describe("Lauchpad", () => {
     const sellAmount = buyerBalance / 2n;
     const expectedEth = await pool.calculateSellReturn(sellAmount);
     console.log("Tokens to sell:", ethers.formatUnits(sellAmount, 18));
-    console.log("Expected ETH to receive:", ethers.formatEther(expectedEth));
+    console.log("Expected ETH to receive (gross, before sell fees):", ethers.formatEther(expectedEth));
 
     // Get ETH balance before sale
     const ethBalanceBefore = await ethers.provider.getBalance(buyer.address);
@@ -291,12 +365,14 @@ describe("Lauchpad", () => {
     const priceAfterSell = await pool.calculateCurrentPrice();
     const virtualTokensAfterSell = await pool.virtualTokenReserve();
     const virtualEthAfterSell = await pool.virtualEthReserve();
+    const ethRaisedAfterSell = await pool.ethRaised();
 
     console.log("Remaining Tokens:", ethers.formatUnits(balanceAfterSell, 18));
     console.log("ETH Received (calculated from balance):", ethers.formatEther(ethBalanceAfter - ethBalanceBefore + gasCost));
     console.log("Price After Sell:", ethers.formatEther(priceAfterSell));
     console.log("Virtual Tokens After Sell:", ethers.formatUnits(virtualTokensAfterSell, 18));
     console.log("Virtual ETH After Sell:", ethers.formatEther(virtualEthAfterSell));
+    console.log("ETH Raised by curve after sell:", ethers.formatEther(ethRaisedAfterSell));
 
     // Verify price decreased after selling
     expect(priceAfterSell).to.be.lt(priceAfterBuy);
@@ -426,8 +502,8 @@ describe("Lauchpad", () => {
     const pool = await ethers.getContractAt("BondingCurvePool", token1Address);
 
     // Initial state
-    const initialPrice = await pool.calculateCurrentPrice();
-    console.log("\nInitial Price:", ethers.formatEther(initialPrice), "ETH/token");
+    const initialPrice = await pool.initialTokenPrice(); // Use stored initial price
+    console.log("\nInitial Price for Token 1 multiple buys:", ethers.formatEther(initialPrice), "ETH/token");
 
     // Array of buy amounts to test
     const buyAmounts = [
@@ -463,8 +539,33 @@ describe("Lauchpad", () => {
       const buyAmount = buyAmounts[i];
 
       try {
-        // Calculate expected tokens before buying
-        const expectedTokens = await pool.calculateBuyReturn(buyAmount);
+        // Simulate fee calculation to get netEthForCurve for calculateBuyReturn
+        const LOTTERY_POOL_FEE_NUMERATOR = 30n;
+        const LOTTERY_POOL_FEE_DENOMINATOR = 100n;
+        const HOLDER_POOL_FEE_NUMERATOR = 111n;
+        const HOLDER_POOL_FEE_DENOMINATOR = 10000n;
+        const PROTOCOL_POOL_FEE_NUMERATOR = 111n;
+        const PROTOCOL_POOL_FEE_DENOMINATOR = 10000n;
+        const DEV_FEE_NUMERATOR = 111n;
+        const DEV_FEE_DENOMINATOR = 10000n;
+
+        let totalFeesPaidForThisBuy = 0n;
+        const isLotteryTaxActive = await pool.isLotteryTaxActive();
+        if (isLotteryTaxActive) {
+            const lotteryFee = (buyAmount * LOTTERY_POOL_FEE_NUMERATOR) / LOTTERY_POOL_FEE_DENOMINATOR;
+            totalFeesPaidForThisBuy += lotteryFee;
+        }
+        const holderFee = (buyAmount * HOLDER_POOL_FEE_NUMERATOR) / HOLDER_POOL_FEE_DENOMINATOR;
+        totalFeesPaidForThisBuy += holderFee;
+        const protocolFee = (buyAmount * PROTOCOL_POOL_FEE_NUMERATOR) / PROTOCOL_POOL_FEE_DENOMINATOR;
+        totalFeesPaidForThisBuy += protocolFee;
+        const devFee = (buyAmount * DEV_FEE_NUMERATOR) / DEV_FEE_DENOMINATOR;
+        totalFeesPaidForThisBuy += devFee;
+        
+        const netEthForCurveForThisBuy = buyAmount - totalFeesPaidForThisBuy;
+
+        // Calculate expected tokens before buying, based on net ETH
+        const expectedTokens = await pool.calculateBuyReturn(netEthForCurveForThisBuy);
 
         // Get price before buy
         const priceBeforeBuy = await pool.calculateCurrentPrice();
@@ -529,18 +630,18 @@ describe("Lauchpad", () => {
 
     console.log("Final Price:", ethers.formatEther(await pool.calculateCurrentPrice()), "ETH/token");
     console.log("Price Increase:",
-      ((Number(await pool.calculateCurrentPrice()) - Number(initialPrice)) / Number(initialPrice) * 100).toFixed(2),
+      initialPrice > 0 ? ((Number(await pool.calculateCurrentPrice()) - Number(initialPrice)) / Number(initialPrice) * 100).toFixed(2) : "N/A", // Check for initialPrice > 0
       "%"
     );
   });
 
   it("Token 2 price changes with multiple buys", async () => {
     console.log(`\n--- TOKEN 2 ${token2Address} MULTIPLE BUYS PRICE IMPACT TEST ---`);
-    const pool = await ethers.getContractAt("BondingCurvePool", token1Address);
+    const pool = await ethers.getContractAt("BondingCurvePool", token2Address);
 
     // Initial state
-    const initialPrice = await pool.calculateCurrentPrice();
-    console.log("\nInitial Price:", ethers.formatEther(initialPrice), "ETH/token");
+    const initialPrice = await pool.initialTokenPrice(); // Use stored initial price
+    console.log("\nInitial Price for Token 2 multiple buys:", ethers.formatEther(initialPrice), "ETH/token");
 
     // Array of buy amounts to test
     const buyAmounts = [
@@ -576,8 +677,33 @@ describe("Lauchpad", () => {
       const buyAmount = buyAmounts[i];
 
       try {
-        // Calculate expected tokens before buying
-        const expectedTokens = await pool.calculateBuyReturn(buyAmount);
+        // Simulate fee calculation to get netEthForCurve for calculateBuyReturn
+        const LOTTERY_POOL_FEE_NUMERATOR = 30n;
+        const LOTTERY_POOL_FEE_DENOMINATOR = 100n;
+        const HOLDER_POOL_FEE_NUMERATOR = 111n;
+        const HOLDER_POOL_FEE_DENOMINATOR = 10000n;
+        const PROTOCOL_POOL_FEE_NUMERATOR = 111n;
+        const PROTOCOL_POOL_FEE_DENOMINATOR = 10000n;
+        const DEV_FEE_NUMERATOR = 111n;
+        const DEV_FEE_DENOMINATOR = 10000n;
+
+        let totalFeesPaidForThisBuy = 0n;
+        const isLotteryTaxActive = await pool.isLotteryTaxActive();
+        if (isLotteryTaxActive) {
+            const lotteryFee = (buyAmount * LOTTERY_POOL_FEE_NUMERATOR) / LOTTERY_POOL_FEE_DENOMINATOR;
+            totalFeesPaidForThisBuy += lotteryFee;
+        }
+        const holderFee = (buyAmount * HOLDER_POOL_FEE_NUMERATOR) / HOLDER_POOL_FEE_DENOMINATOR;
+        totalFeesPaidForThisBuy += holderFee;
+        const protocolFee = (buyAmount * PROTOCOL_POOL_FEE_NUMERATOR) / PROTOCOL_POOL_FEE_DENOMINATOR;
+        totalFeesPaidForThisBuy += protocolFee;
+        const devFee = (buyAmount * DEV_FEE_NUMERATOR) / DEV_FEE_DENOMINATOR;
+        totalFeesPaidForThisBuy += devFee;
+        
+        const netEthForCurveForThisBuy = buyAmount - totalFeesPaidForThisBuy;
+        
+        // Calculate expected tokens before buying, based on net ETH
+        const expectedTokens = await pool.calculateBuyReturn(netEthForCurveForThisBuy);
 
         // Get price before buy
         const priceBeforeBuy = await pool.calculateCurrentPrice();
@@ -642,8 +768,214 @@ describe("Lauchpad", () => {
 
     console.log("Final Price:", ethers.formatEther(await pool.calculateCurrentPrice()), "ETH/token");
     console.log("Price Increase:",
-      ((Number(await pool.calculateCurrentPrice()) - Number(initialPrice)) / Number(initialPrice) * 100).toFixed(2),
+      initialPrice > 0 ? ((Number(await pool.calculateCurrentPrice()) - Number(initialPrice)) / Number(initialPrice) * 100).toFixed(2) : "N/A", // Check for initialPrice > 0
       "%"
     );
+  });
+});
+
+describe("GIVEN_TEST Simulation Comparison", function () {
+  let launchpad, pool, poolAddress;
+  let owner, buyer, user2, treasury;
+
+  // Parameters from GIVEN_TEST simulation
+  const GIVEN_TEST_INITIAL_SUPPLY_BASE = 1_000_000_000n;
+  const GIVEN_TEST_TOTAL_SUPPLY_WEI = ethers.parseUnits(GIVEN_TEST_INITIAL_SUPPLY_BASE.toString(), 18);
+
+  // GIVEN_TEST new lottery_pool_target_eth = 3.333333 ETH (significantly smaller)
+  const GIVEN_TEST_EFFECTIVE_LIQUIDITY_TARGET_ETH_NUM_STR = "3.333333"; // Updated from (100 / 0.3).toString();
+  const GIVEN_TEST_EFFECTIVE_LIQUIDITY_TARGET_ETH_WEI = ethers.parseEther(GIVEN_TEST_EFFECTIVE_LIQUIDITY_TARGET_ETH_NUM_STR);
+
+  // To make Solidity's effectiveLiquidityTargetForCurveSetup match GIVEN_TEST's, 
+  // _initialLotteryPool_sol * 3 = GIVEN_TEST_EFFECTIVE_LIQUIDITY_TARGET_ETH
+  // So, _initialLotteryPool_sol = GIVEN_TEST_EFFECTIVE_LIQUIDITY_TARGET_ETH / 3
+  const SOLIDITY_INITIAL_LOTTERY_POOL_ETH_NUM_STR = (parseFloat(GIVEN_TEST_EFFECTIVE_LIQUIDITY_TARGET_ETH_NUM_STR) / 3).toString(); // Updated
+  const SOLIDITY_INITIAL_LOTTERY_POOL_WEI = ethers.parseEther(SOLIDITY_INITIAL_LOTTERY_POOL_ETH_NUM_STR);
+
+  // GIVEN_TEST new initial price = GIVEN_TEST_EFFECTIVE_LIQUIDITY_TARGET_ETH / GIVEN_TEST_INITIAL_SUPPLY_BASE
+  const GIVEN_TEST_INITIAL_PRICE_ETH_PER_TOKEN_NUM_STR = (parseFloat(GIVEN_TEST_EFFECTIVE_LIQUIDITY_TARGET_ETH_NUM_STR) / Number(GIVEN_TEST_INITIAL_SUPPLY_BASE) ).toFixed(18); // Updated
+
+  // GIVEN_TEST's s_migrated (tokens available for curve) = 0.8 * GIVEN_TEST_INITIAL_SUPPLY_BASE (remains 800M)
+  const GIVEN_TEST_S_MIGRATED_BASE = GIVEN_TEST_INITIAL_SUPPLY_BASE * 8n / 10n; // 800,000,000
+
+  // GIVEN_TEST's pre-adjustment virtual reserves (from new output)
+  // v_tokens: 4,000,000,000, v_eth: 13.333333
+  const GIVEN_TEST_VTOKENS_PRE_ADJ_STR = "4000000000"; // Updated from calculation
+  const GIVEN_TEST_VETH_PRE_ADJ_STR = "13.333333"; // Updated from calculation
+
+  // GIVEN_TEST's post-adjustment virtual reserves (from new simulation output)
+  const GIVEN_TEST_VTOKENS_POST_ADJ_STR = "2424242424"; 
+  const GIVEN_TEST_VETH_POST_ADJ_NUM_STR = "8.080808";
+
+  // Fee constants from Pool.sol for calculating netEthForCurve
+  const LOTTERY_POOL_FEE_NUMERATOR = 30n;
+  const LOTTERY_POOL_FEE_DENOMINATOR = 100n;
+  const HOLDER_POOL_FEE_NUMERATOR = 111n;
+  const HOLDER_POOL_FEE_DENOMINATOR = 10000n;
+  const PROTOCOL_POOL_FEE_NUMERATOR = 111n;
+  const PROTOCOL_POOL_FEE_DENOMINATOR = 10000n;
+  const DEV_FEE_NUMERATOR = 111n;
+  const DEV_FEE_DENOMINATOR = 10000n;
+
+  before(async () => {
+    [owner, buyer, user2, treasury] = await ethers.getSigners();
+    const TokenLaunchpad = await ethers.getContractFactory("TokenLaunchpad");
+    launchpad = await TokenLaunchpad.deploy(owner.address);
+
+    const tx = await launchpad.launchToken(
+      "PySimToken",
+      "PST",
+      SOLIDITY_INITIAL_LOTTERY_POOL_WEI,
+      treasury.address
+    );
+    const receipt = await tx.wait();
+    const events = await launchpad.queryFilter(launchpad.filters.TokenCreated(), receipt.blockNumber);
+    poolAddress = events[0].args.tokenAddress;
+    pool = await ethers.getContractAt("BondingCurvePool", poolAddress);
+  });
+
+  it("should compare behavior with the GIVEN_TEST simulation step-by-step", async function () {
+    console.log("\n--- GIVEN_TEST Simulation Comparison Test ---");
+    console.log(`Solidarity Initial Lottery Pool (constructor arg): ${ethers.formatEther(SOLIDITY_INITIAL_LOTTERY_POOL_WEI)} ETH`);
+    console.log(`This implies Solidity Effective Liquidity Target for Curve Setup: ${ethers.formatEther(SOLIDITY_INITIAL_LOTTERY_POOL_WEI * 3n)} ETH (matches GIVEN_TEST's ${GIVEN_TEST_EFFECTIVE_LIQUIDITY_TARGET_ETH_NUM_STR} ETH)`);
+    console.log(`Solidity Lottery Pool (for tax & migration ETH target): ${ethers.formatEther(await pool.lotteryPool())} ETH`);
+    console.log(`GIVEN_TEST Migration ETH Target was: ${GIVEN_TEST_EFFECTIVE_LIQUIDITY_TARGET_ETH_NUM_STR} ETH`);
+
+    // Section 1: Initial Parameter Comparison
+    console.log("\n--- Section 1: Initial Parameter Comparison ---");
+    const sol_initialTokenPrice = await pool.initialTokenPrice();
+    const sol_virtualTokenReserve = await pool.virtualTokenReserve();
+    const sol_virtualEthReserve = await pool.virtualEthReserve();
+    const sol_constant_k = await pool.constant_k();
+
+    console.log(`GIVEN_TEST Calculated Initial Price (unscaled): ${GIVEN_TEST_INITIAL_PRICE_ETH_PER_TOKEN_NUM_STR} ETH/token`);
+    console.log(`Solidity Stored initialTokenPrice (scaled by 1e18): ${sol_initialTokenPrice.toString()}`);
+    console.log(`   Solidity Initial Price (unscaled for comparison): ${ethers.formatUnits(sol_initialTokenPrice, 18)}`);
+  
+    console.log(`GIVEN_TEST Pre-Adjustment v_tokens (base): ${GIVEN_TEST_VTOKENS_PRE_ADJ_STR}`);
+    console.log(`Solidity virtualTokenReserve: ${ethers.formatUnits(sol_virtualTokenReserve, 18)}`);
+    console.log(`GIVEN_TEST Pre-Adjustment v_eth (ETH): ${GIVEN_TEST_VETH_PRE_ADJ_STR}`);
+    console.log(`Solidity virtualEthReserve: ${ethers.formatEther(sol_virtualEthReserve)}`);
+    console.log(`Solidity constant_k: ${ethers.formatEther(sol_constant_k)}`);
+
+    // Note: To get maxEthPossible from CurveVerification, you might need to listen to the event upon deployment in beforeEach or add a view function.
+    // For this example, we'll use the GIVEN_TEST script's reported pre-adjustment max ETH.
+    console.log("GIVEN_TEST Max ETH that can be raised (pre-adjustment, from new output): 2.222222 ETH"); // Updated
+    console.log("Solidity would calculate a similar value before any adjustment (not implemented).");
+
+    console.log("\nGIVEN_TEST performs an adjustment to virtual reserves:");
+    console.log(`   GIVEN_TEST Adjusted v_tokens: ${GIVEN_TEST_VTOKENS_POST_ADJ_STR}`);
+    console.log(`   GIVEN_TEST Adjusted v_eth: ${GIVEN_TEST_VETH_POST_ADJ_NUM_STR} ETH`);
+    console.log("Solidity contract DOES NOT perform this specific adjustment. It uses the unadjusted reserves calculated above.");
+    console.log("Subsequent buy/sell comparisons will show differences due to this initial state divergence and fee mechanisms.");
+
+    // GIVEN_TEST simulation's "Initial State" is post-adjustment.
+    // Solidity's initial state is what we logged above (unadjusted by GIVEN_TEST's verification logic).
+
+    // Section 2: Buy Simulation
+    console.log("\n--- Section 2: Buy Simulation ---");
+    const buy_actions = [
+        { desc: "Small buy 1", eth_amount_str: "0.01", py_tokens_received_str: "2996292", py_new_price_str: "0.000000003341588438", py_new_vtokens_str: "2421246132", py_new_veth_str: "8.090808" },
+        { desc: "Small buy 2", eth_amount_str: "0.05", py_tokens_received_str: "14871043", py_new_price_str: "0.000000003383017102", py_new_vtokens_str: "2406375089", py_new_veth_str: "8.140808" },
+        { desc: "Medium buy 1", eth_amount_str: "0.07", py_tokens_received_str: "20515186", py_new_price_str: "0.000000003441446026", py_new_vtokens_str: "2385859903", py_new_veth_str: "8.210808" },
+        { desc: "Medium buy 2", eth_amount_str: "0.07", py_tokens_received_str: "20168345", py_new_price_str: "0.000000003500375208", py_new_vtokens_str: "2365691558", py_new_veth_str: "8.280808" },
+        { desc: "Larger buy 1", eth_amount_str: "0.25", py_tokens_received_str: "69327886", py_new_price_str: "0.000000003714920326", py_new_vtokens_str: "2296363672", py_new_veth_str: "8.530808" },
+    ];
+
+    for (const action of buy_actions) {
+        console.log(`\n--- Simulating: ${action.desc} (${action.eth_amount_str} ETH) ---`);
+        const grossEthAmount = ethers.parseEther(action.eth_amount_str);
+
+        let totalFeesPaid = 0n;
+        const isLotteryTaxActive = await pool.isLotteryTaxActive();
+        if (isLotteryTaxActive) {
+            const lotteryFee = (grossEthAmount * LOTTERY_POOL_FEE_NUMERATOR) / LOTTERY_POOL_FEE_DENOMINATOR;
+            totalFeesPaid += lotteryFee;
+        }
+        const holderFee = (grossEthAmount * HOLDER_POOL_FEE_NUMERATOR) / HOLDER_POOL_FEE_DENOMINATOR;
+        totalFeesPaid += holderFee;
+        const protocolFee = (grossEthAmount * PROTOCOL_POOL_FEE_NUMERATOR) / PROTOCOL_POOL_FEE_DENOMINATOR;
+        totalFeesPaid += protocolFee;
+        const devFee = (grossEthAmount * DEV_FEE_NUMERATOR) / DEV_FEE_DENOMINATOR;
+        totalFeesPaid += devFee;
+        const netEthForCurve = grossEthAmount - totalFeesPaid;
+
+        console.log(`   Solidity: Gross ETH: ${ethers.formatEther(grossEthAmount)}, Fees: ${ethers.formatEther(totalFeesPaid)}, Net ETH for Curve: ${ethers.formatEther(netEthForCurve)}`);
+      
+        const expectedTokens_s = await pool.calculateBuyReturn(netEthForCurve);
+        console.log(`   Solidity: Expected tokens for net ETH: ${ethers.formatUnits(expectedTokens_s, 18)}`);
+      
+        const buyerBalanceBefore = await pool.balanceOf(buyer.address);
+        await pool.connect(buyer).buy({ value: grossEthAmount });
+        const buyerBalanceAfter = await pool.balanceOf(buyer.address);
+        const tokensReceived_s = buyerBalanceAfter - buyerBalanceBefore;
+
+        console.log(`   GIVEN_TEST Reported Tokens Received: ${action.py_tokens_received_str}`);
+        console.log(`   Solidity Actual Tokens Received: ${ethers.formatUnits(tokensReceived_s, 18)} (Note: Based on net ETH and Solidity's unadjusted reserves)`);
+      
+        const price_s_new = await pool.calculateCurrentPrice();
+        const vTR_S_new = await pool.virtualTokenReserve();
+        const vER_S_new = await pool.virtualEthReserve();
+        const ethRaised_s = await pool.ethRaised();
+
+        console.log(`   GIVEN_TEST New Price: ${action.py_new_price_str}`);
+        console.log(`   Solidity New Price: ${ethers.formatUnits(price_s_new, 18)}`);
+        console.log(`   GIVEN_TEST New v_tokens: ${action.py_new_vtokens_str}`);
+        console.log(`   Solidity New virtualTokenReserve: ${ethers.formatUnits(vTR_S_new, 18)}`);
+        console.log(`   GIVEN_TEST New v_eth: ${action.py_new_veth_str}`);
+        console.log(`   Solidity New virtualEthReserve: ${ethers.formatEther(vER_S_new)}`);
+        console.log(`   Solidity ethRaised: ${ethers.formatEther(ethRaised_s)}`);
+    }
+
+    // Section 3: Sell Simulation
+    console.log("\n--- Section 3: Sell Simulation ---");
+    // GIVEN_TEST output shows Real ETH (Collected in Contract) becoming negative after sells,
+    // which implies its `r_eth` is not bounded by contract balance or actual raised ETH.
+    // Solidity's sell will fail if contract ETH balance is insufficient or ethToReturn > ethRaised.
+    const sell_actions = [
+        // GIVEN_TEST r_tokens after buys was 872,121,248. Solidity's sold token count will differ.
+        { desc: "Small sell", py_token_amount_str: "5000000", py_eth_received_str: "0.018534", py_new_price_str: "0.000000003698795604", py_new_vtokens_str: "2301363672", py_new_veth_str: "8.512274" },
+        { desc: "Medium sell", py_token_amount_str: "10000000", py_eth_received_str: "0.036828", py_new_price_str: "0.000000003666859528", py_new_vtokens_str: "2311363672", py_new_veth_str: "8.475446" },
+    ];
+
+    for (const action of sell_actions) {
+        const tokensToSell_s_base = BigInt(action.py_token_amount_str);
+        const tokensToSell_s_wei = ethers.parseUnits(action.py_token_amount_str, 18);
+        console.log(`\n--- Simulating: ${action.desc} (${action.py_token_amount_str} tokens) ---`);
+
+        const buyerTokenBalance = await pool.balanceOf(buyer.address);
+        if (buyerTokenBalance < tokensToSell_s_wei) {
+            console.log(`   Solidity: Buyer has insufficient tokens (${ethers.formatUnits(buyerTokenBalance,18)}) to sell ${action.py_token_amount_str}. Skipping sell.`);
+            continue;
+        }
+
+        const expectedEth_s = await pool.calculateSellReturn(tokensToSell_s_wei);
+        console.log(`   Solidity: Expected ETH for selling ${action.py_token_amount_str} tokens: ${ethers.formatEther(expectedEth_s)}`);
+
+        const buyerEthBalanceBefore = await ethers.provider.getBalance(buyer.address);
+        const contractEthBalanceBefore = await ethers.provider.getBalance(poolAddress);
+        const sellTx = await pool.connect(buyer).sell(tokensToSell_s_wei);
+        const sellReceipt = await sellTx.wait();
+        const gasCost = sellReceipt.gasUsed * sellReceipt.gasPrice;
+        const buyerEthBalanceAfter = await ethers.provider.getBalance(buyer.address);
+        const ethReceived_s_actual = buyerEthBalanceAfter - buyerEthBalanceBefore + gasCost;
+
+        console.log(`   GIVEN_TEST Reported ETH Received: ${action.py_eth_received_str}`);
+        console.log(`   Solidity Actual ETH Received (approx, after gas): ${ethers.formatEther(ethReceived_s_actual)}`);
+      
+        const price_s_after_sell = await pool.calculateCurrentPrice();
+        const vTR_S_after_sell = await pool.virtualTokenReserve();
+        const vER_S_after_sell = await pool.virtualEthReserve();
+        const ethRaised_s_after_sell = await pool.ethRaised();
+
+        console.log(`   GIVEN_TEST New Price after sell: ${action.py_new_price_str}`);
+        console.log(`   Solidity New Price after sell: ${ethers.formatUnits(price_s_after_sell, 18)}`);
+        console.log(`   GIVEN_TEST New v_tokens after sell: ${action.py_new_vtokens_str}`);
+        console.log(`   Solidity New virtualTokenReserve after sell: ${ethers.formatUnits(vTR_S_after_sell, 18)}`);
+        console.log(`   GIVEN_TEST New v_eth after sell: ${action.py_new_veth_str}`);
+        console.log(`   Solidity New virtualEthReserve after sell: ${ethers.formatEther(vER_S_after_sell)}`);
+        console.log(`   Solidity ethRaised after sell: ${ethers.formatEther(ethRaised_s_after_sell)}`);
+    }
+    console.log("\n--- Comparison Test Complete ---");
   });
 });
