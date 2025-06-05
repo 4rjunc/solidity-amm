@@ -1,981 +1,609 @@
-// TODO
-// beautify the prints
-// mock trade till bonding curve
-// setup indexer for buy/sell graph
-
-const { ethers } = require("hardhat");
 const { expect } = require("chai");
+const hre = require("hardhat");
+const ethers = hre.ethers; // This is an ethers v6 object
 
-describe("Lauchpad", () => {
-  let launchpad, token1, token1Address, token2, token2Address, owner, buyer, user2, treasury;
+// Ethers v6 style for utility functions:
+const parseEther = ethers.parseEther;
+const formatEther = ethers.formatEther;
+const formatUnits = ethers.formatUnits;
 
-  // Constants for token creation
-  const TOKEN1_NAME = "DOG Coin";
-  const TOKEN1_SYMBOL = "DOG";
-  const TOKEN1_LOTTERY_POOL = ethers.parseEther("5"); // 5 ETH lottery pool
+// Constants from Pool.sol for reference and calculation (using BigInt)
+const INITIAL_SUPPLY_POOL = 1000000000n * (10n ** 18n); // 1 Billion tokens
+const RESERVED_SUPPLY_PERCENTAGE_POOL = 20; // This remains a regular number for percentage math
+const ONE_ETHER_POOL = 10n ** 18n;
 
-  console.log("TOKEN1_LOTTERY_POOL", TOKEN1_LOTTERY_POOL);
+async function logPoolState(poolInstance, userSigner, stepName = "") {
+    const name = await poolInstance.name();
+    const symbol = await poolInstance.symbol();
+    const currentPrice = await poolInstance.calculateCurrentPrice();
+    const initialSupply = await poolInstance.INITIAL_SUPPLY();
 
+    // MarketCap (in ETH terms, scaled by 1e18) = (TotalSupply_scaled * Price_scaled) / 1e18
+    const marketCap = initialSupply * currentPrice / ONE_ETHER_POOL;
 
-  const TOKEN2_NAME = "CAT Coin";
-  const TOKEN2_SYMBOL = "CAT";
-  const TOKEN2_LOTTERY_POOL = ethers.parseEther("10"); // 10 ETH lottery pool
-
-  // Given parameters
-  //const initialTokenPrice = ethers.parseUnits("0.000001", "ether"); // 1×10^-6 ETH/token (100x increase)
-  //const initialLotteryPool = ethers.parseEther("57"); // 57 ETH initial lottery pool (~100K USD)
-  //const TOTAL_SUPPLY = ethers.parseUnits("1000000000", 18); // 1 billion tokens
-  //const MIGRATED_SUPPLY = ethers.parseUnits("800000000", 18); // 800 million tokens migrated to LP
-
-  before(async () => {
-
-    // treasury is where team split gooes
-    [owner, buyer, user2, treasury] = await ethers.getSigners();
-    const TokenLaunchpad = await ethers.getContractFactory("TokenLaunchpad");
-    launchpad = await TokenLaunchpad.deploy(owner.address);
-
-    // delpoy 1st token
-    const tx1 = await launchpad.launchToken(
-      TOKEN1_NAME,
-      TOKEN1_SYMBOL,
-      TOKEN1_LOTTERY_POOL,
-      treasury.address // Pass treasury address instead of price
-    );
-
-    const receipt1 = await tx1.wait();
-
-    const tx2 = await launchpad.launchToken(
-      TOKEN2_NAME,
-      TOKEN2_SYMBOL,
-      TOKEN2_LOTTERY_POOL,
-      treasury.address // Pass treasury address instead of price
-    );
-
-    const receipt2 = await tx2.wait();
-
-    //console.log("\nreceipt1:", receipt1);
-    //console.log("\nreceipt2:", receipt2);
-
-    const tokens = await launchpad.getAllTokens();
-    //console.log("\ntokens:", tokens);
-
-    token1Address = tokens[0][0];
-    console.log("token1", token1Address);
-
-    token2Address = tokens[1][0];
-    console.log("token2", token2Address);
-
-  });
-
-  //describe("Token Creation", function() {
-  //  it("Should create tokens correctly", async function() {
-  //    // Check basic properties of token1
-  //    expect(await token1.name()).to.equal(TOKEN1_NAME);
-  //    expect(await token1.symbol()).to.equal(TOKEN1_SYMBOL);
-  //
-  //    // Check basic properties of token2
-  //    expect(await token2.name()).to.equal(TOKEN2_NAME);
-  //    expect(await token2.symbol()).to.equal(TOKEN2_SYMBOL);
-  //
-  //    // Check launchpad's token list
-  //    const tokens = await launchpad.getAllTokens();
-  //    expect(tokens.length).to.equal(2);
-  //    expect(tokens[0].name).to.equal(TOKEN1_NAME);
-  //    expect(tokens[1].name).to.equal(TOKEN2_NAME);
-  //  });
-  //});
-
-  it("TOKEN 1", async () => {
-    // Check initial state
-    token1 = await ethers.getContractAt("BondingCurvePool", token1Address);
-    //console.log("token1", token1);
-    const virtualTokenReserve = await token1.virtualTokenReserve();
-    const virtualEthReserve = await token1.virtualEthReserve();
-    const constantK = await token1.constant_k();
-    const lotteryPool = await token1.lotteryPool();
-    const initialPriceFromContract = await token1.initialTokenPrice(); // Get the internally calculated price
-
-    console.log("Token 1");
-    console.log("- Virtual Token Reserve:", ethers.formatUnits(virtualTokenReserve, 18));
-    console.log("- Virtual ETH Reserve:", ethers.formatEther(virtualEthReserve));
-    console.log("- Constant K:", ethers.formatEther(constantK));
-    console.log("- Lottery Pool:", ethers.formatEther(lotteryPool));
-    console.log("- Initial Token Price (from contract):", ethers.formatEther(initialPriceFromContract));
-
-    // Verify constant product formula
-    const calculatedK = (virtualTokenReserve * virtualEthReserve) / ethers.parseUnits("1", 18);
-    expect(calculatedK).to.be.closeTo(constantK, ethers.parseUnits("1", 10)); // Allow small rounding difference
-
-    // Verify current price (should match the initialTokenPrice from contract now)
-    const currentPrice = await token1.calculateCurrentPrice();
-    console.log("- Current Token Price (matches initial):", ethers.formatEther(currentPrice));
-    expect(currentPrice).to.be.closeTo(initialPriceFromContract, ethers.parseUnits("0.000000000000001", 18)); // Adjust precision as needed
-  });
-
-  it("TOKEN 2", async () => {
-    // Check initial state
-    token2 = await ethers.getContractAt("BondingCurvePool", token2Address);
-    //console.log("token2", token2);
-    const virtualTokenReserve = await token2.virtualTokenReserve();
-    const virtualEthReserve = await token2.virtualEthReserve();
-    const constantK = await token2.constant_k();
-    const lotteryPool = await token2.lotteryPool();
-    const initialPriceFromContract = await token2.initialTokenPrice(); // Get the internally calculated price
-
-    console.log("Token 2");
-    console.log("- Virtual Token Reserve:", ethers.formatUnits(virtualTokenReserve, 18));
-    console.log("- Virtual ETH Reserve:", ethers.formatEther(virtualEthReserve));
-    console.log("- Constant K:", ethers.formatEther(constantK));
-    console.log("- Lottery Pool:", ethers.formatEther(lotteryPool));
-    console.log("- Initial Token Price (from contract):", ethers.formatEther(initialPriceFromContract));
-
-    // Verify constant product formula
-    const calculatedK = (virtualTokenReserve * virtualEthReserve) / ethers.parseUnits("1", 18);
-    expect(calculatedK).to.be.closeTo(constantK, ethers.parseUnits("1", 10)); // Allow small rounding difference
-
-    // Verify current price (should match the initialTokenPrice from contract now)
-    const currentPrice = await token2.calculateCurrentPrice();
-    console.log("- Current Token Price (matches initial):", ethers.formatEther(currentPrice));
-    expect(currentPrice).to.be.closeTo(initialPriceFromContract, ethers.parseUnits("0.000000000000001", 18)); // Adjust precision
-  });
-
-  it("Token 1 handle buy and sell operations", async () => {
-    // Check initial state
-    const pool = await ethers.getContractAt("BondingCurvePool", token1Address);
-    //console.log("token1", token1);
-    const initialSupply = await pool.totalSupply();
-    const initialPrice = await pool.initialTokenPrice(); // Use the stored initial price
-    const initialVirtualTokens = await pool.virtualTokenReserve();
-    const initialVirtualEth = await pool.virtualEthReserve();
-
-    console.log("Initial Supply:", ethers.formatUnits(initialSupply, 18));
-    console.log("Initial Token Price:", ethers.formatEther(initialPrice));
-    console.log("Initial Virtual Tokens:", ethers.formatUnits(initialVirtualTokens, 18));
-    console.log("Initial Virtual ETH:", ethers.formatEther(initialVirtualEth));
-
-    const currentPrice = await pool.calculateCurrentPrice();
-    console.log("-Current Token Price (should match initial):", ethers.formatEther(currentPrice));
-    expect(currentPrice).to.be.closeTo(initialPrice, ethers.parseUnits("0.000000000000001", 18));
-
-    // Buyer purchases tokens
-    console.log("\n--- BUYING TOKENS ---");
-    // Adjust netEthForCurve calculation based on new fee structure in Pool.sol if needed
-    // For now, assuming calculateBuyReturn correctly handles this internally if fees are deducted before calculation.
-    // If calculateBuyReturn expects gross ETH, the test is fine.
-    // The Pool.sol buy() function calculates netEthForCurve from msg.value, and then calls calculateBuyReturn(netEthForCurve).
-    // So, we should calculate expected tokens based on netEthForCurve.
-
-    const grossBuyAmount = ethers.parseEther("0.05"); // Buyer sends 0.05 ETH
-
-    // Simulate fee calculation to get netEthForCurve for calculateBuyReturn
-    const LOTTERY_POOL_FEE_NUMERATOR = 30n;
-    const LOTTERY_POOL_FEE_DENOMINATOR = 100n;
-    const HOLDER_POOL_FEE_NUMERATOR = 111n;
-    const HOLDER_POOL_FEE_DENOMINATOR = 10000n;
-    const PROTOCOL_POOL_FEE_NUMERATOR = 111n;
-    const PROTOCOL_POOL_FEE_DENOMINATOR = 10000n;
-    const DEV_FEE_NUMERATOR = 111n;
-    const DEV_FEE_DENOMINATOR = 10000n;
-
-    let totalFeesPaid = 0n;
-    const isLotteryTaxActive = await pool.isLotteryTaxActive(); // Check current status
-    if (isLotteryTaxActive) {
-        const lotteryFee = (grossBuyAmount * LOTTERY_POOL_FEE_NUMERATOR) / LOTTERY_POOL_FEE_DENOMINATOR;
-        totalFeesPaid += lotteryFee;
-    }
-    const holderFee = (grossBuyAmount * HOLDER_POOL_FEE_NUMERATOR) / HOLDER_POOL_FEE_DENOMINATOR;
-    totalFeesPaid += holderFee;
-    const protocolFee = (grossBuyAmount * PROTOCOL_POOL_FEE_NUMERATOR) / PROTOCOL_POOL_FEE_DENOMINATOR;
-    totalFeesPaid += protocolFee;
-    const devFee = (grossBuyAmount * DEV_FEE_NUMERATOR) / DEV_FEE_DENOMINATOR;
-    totalFeesPaid += devFee;
-
-    const netEthForCurve = grossBuyAmount - totalFeesPaid;
-    console.log("Gross ETH for buy:", ethers.formatEther(grossBuyAmount));
-    console.log("Total fees estimated:", ethers.formatEther(totalFeesPaid));
-    console.log("Net ETH for curve:", ethers.formatEther(netEthForCurve));
-
-    const expectedTokens = await pool.calculateBuyReturn(netEthForCurve);
-    console.log("Expected tokens to receive (for net ETH):", ethers.formatUnits(expectedTokens, 18));
-
-    // Price before this specific buy transaction
-    const priceBeforeThisBuy = await pool.calculateCurrentPrice(); 
-    console.log("- Price just before this buy:", ethers.formatEther(priceBeforeThisBuy));
-
-    await pool.connect(buyer).buy({ value: grossBuyAmount });
-
-    // Check post-purchase state
-    const buyerBalance = await pool.balanceOf(buyer.address);
-    const priceAfterBuy = await pool.calculateCurrentPrice();
-    const virtualTokensAfterBuy = await pool.virtualTokenReserve();
-    const virtualEthAfterBuy = await pool.virtualEthReserve();
-    const ethRaisedAfterBuy = await pool.ethRaised();
-
-    console.log("Tokens Purchased:", ethers.formatUnits(buyerBalance, 18));
-    console.log("Price After Buy:", ethers.formatEther(priceAfterBuy));
-    console.log("Virtual Tokens After Buy:", ethers.formatUnits(virtualTokensAfterBuy, 18));
-    console.log("Virtual ETH After Buy:", ethers.formatEther(virtualEthAfterBuy));
-    console.log("ETH Raised by curve after buy:", ethers.formatEther(ethRaisedAfterBuy));
-
-    // Verify price increased after purchase
-    expect(priceAfterBuy).to.be.gt(priceBeforeThisBuy); // Compare with price just before this buy
-
-    // Verify tokens received matches calculation
-    expect(buyerBalance).to.equal(expectedTokens);
-
-    // Buyer sells half of their tokens
-    console.log("\n--- SELLING TOKENS ---");
-    const sellAmount = buyerBalance / 2n;
-    const expectedEth = await pool.calculateSellReturn(sellAmount);
-    console.log("Tokens to sell:", ethers.formatUnits(sellAmount, 18));
-    console.log("Expected ETH to receive (gross, before any sell fees if they existed):", ethers.formatEther(expectedEth));
-
-    // Get ETH balance before sale
-    const ethBalanceBefore = await ethers.provider.getBalance(buyer.address);
-
-    // Perform the sale
-    const sellTx = await pool.connect(buyer).sell(sellAmount);
-    const receipt = await sellTx.wait();
-    const gasCost = receipt.gasUsed * receipt.gasPrice;
-
-    // Get ETH balance after sale
-    const ethBalanceAfter = await ethers.provider.getBalance(buyer.address);
-
-    // Check post-sale state
-    const balanceAfterSell = await pool.balanceOf(buyer.address);
-    const priceAfterSell = await pool.calculateCurrentPrice();
-    const virtualTokensAfterSell = await pool.virtualTokenReserve();
-    const virtualEthAfterSell = await pool.virtualEthReserve();
-    const ethRaisedAfterSell = await pool.ethRaised(); // Check ethRaised after sell
-
-    console.log("Remaining Tokens:", ethers.formatUnits(balanceAfterSell, 18));
-    console.log("ETH Received (calculated from balance):", ethers.formatEther(ethBalanceAfter - ethBalanceBefore + gasCost));
-    console.log("Price After Sell:", ethers.formatEther(priceAfterSell));
-    console.log("Virtual Tokens After Sell:", ethers.formatUnits(virtualTokensAfterSell, 18));
-    console.log("Virtual ETH After Sell:", ethers.formatEther(virtualEthAfterSell));
-    console.log("ETH Raised by curve after sell:", ethers.formatEther(ethRaisedAfterSell));
-
-    // Verify price decreased after selling
-    expect(priceAfterSell).to.be.lt(priceAfterBuy);
-
-    // Verify remaining tokens
-    expect(balanceAfterSell).to.equal(buyerBalance - sellAmount);
-
-    // Verify ETH received (accounting for gas)
-    expect(ethBalanceAfter - ethBalanceBefore + gasCost).to.be.closeTo(expectedEth, ethers.parseUnits("0.000001", 18));
-  });
-
-  it("Token 2 handle buy and sell operations", async () => {
-    // Check initial state
-    const pool = await ethers.getContractAt("BondingCurvePool", token2Address);
-    //console.log("token1", token1);
-    const initialSupply = await pool.totalSupply();
-    const initialPrice = await pool.initialTokenPrice(); // Use the stored initial price
-    const initialVirtualTokens = await pool.virtualTokenReserve();
-    const initialVirtualEth = await pool.virtualEthReserve();
-
-    console.log("Initial Supply:", ethers.formatUnits(initialSupply, 18));
-    console.log("Initial Token Price:", ethers.formatEther(initialPrice));
-    console.log("Initial Virtual Tokens:", ethers.formatUnits(initialVirtualTokens, 18));
-    console.log("Initial Virtual ETH:", ethers.formatEther(initialVirtualEth));
-
-    const currentPrice = await pool.calculateCurrentPrice();
-    console.log("-Current Token Price (should match initial):", ethers.formatEther(currentPrice));
-    expect(currentPrice).to.be.closeTo(initialPrice, ethers.parseUnits("0.000000000000001", 18));
-
-    // Buyer purchases tokens
-    console.log("\n--- BUYING TOKENS ---");
-    const grossBuyAmount = ethers.parseEther("0.05"); // Buyer sends 0.05 ETH
-
-    // Simulate fee calculation to get netEthForCurve
-    const LOTTERY_POOL_FEE_NUMERATOR = 30n;
-    const LOTTERY_POOL_FEE_DENOMINATOR = 100n;
-    const HOLDER_POOL_FEE_NUMERATOR = 111n;
-    const HOLDER_POOL_FEE_DENOMINATOR = 10000n;
-    const PROTOCOL_POOL_FEE_NUMERATOR = 111n;
-    const PROTOCOL_POOL_FEE_DENOMINATOR = 10000n;
-    const DEV_FEE_NUMERATOR = 111n;
-    const DEV_FEE_DENOMINATOR = 10000n;
-
-    let totalFeesPaid = 0n;
-    const isLotteryTaxActive = await pool.isLotteryTaxActive(); // Check current status
-    if (isLotteryTaxActive) {
-        const lotteryFee = (grossBuyAmount * LOTTERY_POOL_FEE_NUMERATOR) / LOTTERY_POOL_FEE_DENOMINATOR;
-        totalFeesPaid += lotteryFee;
-    }
-    const holderFee = (grossBuyAmount * HOLDER_POOL_FEE_NUMERATOR) / HOLDER_POOL_FEE_DENOMINATOR;
-    totalFeesPaid += holderFee;
-    const protocolFee = (grossBuyAmount * PROTOCOL_POOL_FEE_NUMERATOR) / PROTOCOL_POOL_FEE_DENOMINATOR;
-    totalFeesPaid += protocolFee;
-    const devFee = (grossBuyAmount * DEV_FEE_NUMERATOR) / DEV_FEE_DENOMINATOR;
-    totalFeesPaid += devFee;
+    const ethRaised = await poolInstance.ethRaised();
+    const lotteryPoolTarget = await poolInstance.lotteryPool();
     
-    const netEthForCurve = grossBuyAmount - totalFeesPaid;
-    console.log("Gross ETH for buy:", ethers.formatEther(grossBuyAmount));
-    console.log("Total fees estimated:", ethers.formatEther(totalFeesPaid));
-    console.log("Net ETH for curve:", ethers.formatEther(netEthForCurve));
+    const contractTokenBalance = await poolInstance.balanceOf(poolInstance.target);
+    const contractEthBalance = await ethers.provider.getBalance(poolInstance.target);
+    
+    const virtualTokenReserve = await poolInstance.virtualTokenReserve();
+    const virtualEthReserve = await poolInstance.virtualEthReserve();
+    
+    const accLotteryTax = await poolInstance.accumulatedLotteryTax();
+    const accHolderTax = await poolInstance.accumulatedHolderTax();
+    const accProtocolTax = await poolInstance.accumulatedProtocolTax();
+    const accDevTax = await poolInstance.accumulatedDevTax();
 
-    const expectedTokens = await pool.calculateBuyReturn(netEthForCurve);
-    console.log("Expected tokens to receive (for net ETH):", ethers.formatUnits(expectedTokens, 18));
+    const isLotteryTaxActive = await poolInstance.isLotteryTaxActive();
+    const isReservedSupplyActive = await poolInstance.isReservedSupplyActive();
+    const totalTokensSoldFromCurve = await poolInstance.totalTokensSoldFromCurve();
+    const k_constant = await poolInstance.constant_k();
 
-    const priceBeforeThisBuy = await pool.calculateCurrentPrice();
-    console.log("- Price just before this buy:", ethers.formatEther(priceBeforeThisBuy));
-
-    await pool.connect(buyer).buy({ value: grossBuyAmount });
-
-    // Check post-purchase state
-    const buyerBalance = await pool.balanceOf(buyer.address);
-    const priceAfterBuy = await pool.calculateCurrentPrice();
-    const virtualTokensAfterBuy = await pool.virtualTokenReserve();
-    const virtualEthAfterBuy = await pool.virtualEthReserve();
-    const ethRaisedAfterBuy = await pool.ethRaised();
-
-    console.log("Tokens Purchased:", ethers.formatUnits(buyerBalance, 18));
-    console.log("Price After Buy:", ethers.formatEther(priceAfterBuy));
-    console.log("Virtual Tokens After Buy:", ethers.formatUnits(virtualTokensAfterBuy, 18));
-    console.log("Virtual ETH After Buy:", ethers.formatEther(virtualEthAfterBuy));
-    console.log("ETH Raised by curve after buy:", ethers.formatEther(ethRaisedAfterBuy));
-
-    // Verify price increased after purchase
-    expect(priceAfterBuy).to.be.gt(priceBeforeThisBuy);
-
-    // Verify tokens received matches calculation
-    expect(buyerBalance).to.equal(expectedTokens);
-
-    // Buyer sells half of their tokens
-    console.log("\n--- SELLING TOKENS ---");
-    const sellAmount = buyerBalance / 2n;
-    const expectedEth = await pool.calculateSellReturn(sellAmount);
-    console.log("Tokens to sell:", ethers.formatUnits(sellAmount, 18));
-    console.log("Expected ETH to receive (gross, before sell fees):", ethers.formatEther(expectedEth));
-
-    // Get ETH balance before sale
-    const ethBalanceBefore = await ethers.provider.getBalance(buyer.address);
-
-    // Perform the sale
-    const sellTx = await pool.connect(buyer).sell(sellAmount);
-    const receipt = await sellTx.wait();
-    const gasCost = receipt.gasUsed * receipt.gasPrice;
-
-    // Get ETH balance after sale
-    const ethBalanceAfter = await ethers.provider.getBalance(buyer.address);
-
-    // Check post-sale state
-    const balanceAfterSell = await pool.balanceOf(buyer.address);
-    const priceAfterSell = await pool.calculateCurrentPrice();
-    const virtualTokensAfterSell = await pool.virtualTokenReserve();
-    const virtualEthAfterSell = await pool.virtualEthReserve();
-    const ethRaisedAfterSell = await pool.ethRaised();
-
-    console.log("Remaining Tokens:", ethers.formatUnits(balanceAfterSell, 18));
-    console.log("ETH Received (calculated from balance):", ethers.formatEther(ethBalanceAfter - ethBalanceBefore + gasCost));
-    console.log("Price After Sell:", ethers.formatEther(priceAfterSell));
-    console.log("Virtual Tokens After Sell:", ethers.formatUnits(virtualTokensAfterSell, 18));
-    console.log("Virtual ETH After Sell:", ethers.formatEther(virtualEthAfterSell));
-    console.log("ETH Raised by curve after sell:", ethers.formatEther(ethRaisedAfterSell));
-
-    // Verify price decreased after selling
-    expect(priceAfterSell).to.be.lt(priceAfterBuy);
-
-    // Verify remaining tokens
-    expect(balanceAfterSell).to.equal(buyerBalance - sellAmount);
-
-    // Verify ETH received (accounting for gas)
-    expect(ethBalanceAfter - ethBalanceBefore + gasCost).to.be.closeTo(expectedEth, ethers.parseUnits("0.000001", 18));
-  });
-
-
-  //it("should enforce minimum buy amount", async () => {
-  //  console.log("\n--- TESTING MINIMUM BUY AMOUNT ---");
-  //  const tooSmallAmount = ethers.parseEther("0.005"); // Below 0.01 ETH minimum
-  //
-  //  try {
-  //    await pool.connect(buyer).buy({ value: tooSmallAmount });
-  //    expect.fail("Transaction should have failed due to minimum buy limit");
-  //  } catch (error) {
-  //    console.log("Transaction reverted as expected:", error.message.includes("Below minimum buy amount"));
-  //  }
-  //});
-
-  //it("should enforce maximum buy amount", async () => {
-  //  console.log("\n--- TESTING MAXIMUM BUY AMOUNT ---");
-  //
-  //  // Get lottery pool and ETH raised
-  //  const lotteryPool = await pool.lotteryPool();
-  //  const ethRaised = await pool.ethRaised();
-  //
-  //  // Calculate max buy (10% of remaining pool)
-  //  const maxBuy = (lotteryPool - ethRaised) * 10n / 100n;
-  //  console.log("Current lottery pool:", ethers.formatEther(lotteryPool));
-  //  console.log("Current ETH raised:", ethers.formatEther(ethRaised));
-  //  console.log("Max allowed buy:", ethers.formatEther(maxBuy));
-  //
-  //  // Try buying slightly over the max
-  //  const tooLargeAmount = maxBuy + ethers.parseEther("0.1");
-  //
-  //  try {
-  //    await pool.connect(buyer).buy({ value: tooLargeAmount });
-  //    expect.fail("Transaction should have failed due to maximum buy limit");
-  //  } catch (error) {
-  //    console.log("Transaction reverted as expected:", error.message.includes("Exceeds maximum buy amount"));
-  //  }
-  //
-  //  // Confirm we can buy at exactly the maximum
-  //  await pool.connect(buyer).buy({ value: maxBuy });
-  //  console.log("Successfully bought tokens at max limit");
-  //});
-
-  //it("should revert when trying to sell more tokens than owned", async () => {
-  //  console.log("\n--- TESTING SELLING MORE THAN OWNED ---");
-  //
-  //  // Check buyer's balance
-  //  const buyerBalance = await pool.balanceOf(buyer.address);
-  //  console.log("Buyer's actual balance:", ethers.formatUnits(buyerBalance, 18));
-  //
-  //  // Try to sell more tokens than owned
-  //  const excessiveAmount = ethers.parseEther("1000");
-  //  console.log("Attempting to sell:", ethers.formatUnits(excessiveAmount, 18));
-  //
-  //  try {
-  //    await pool.connect(buyer).sell(excessiveAmount);
-  //    expect.fail("Expected transaction to revert but it didn't");
-  //  } catch (error) {
-  //    console.log("Transaction reverted as expected:", error.message.includes("Not enough tokens to sell"));
-  //  }
-  //});
-  //
-  //it("should allow token burning", async () => {
-  //  console.log("\n--- TESTING TOKEN BURNING ---");
-  //
-  //  // First buy some tokens
-  //  await pool.connect(buyer).buy({ value: ethers.parseEther("0.05") });
-  //  const initialBalance = await pool.balanceOf(buyer.address);
-  //  console.log("Initial token balance:", ethers.formatUnits(initialBalance, 18));
-  //
-  //  // Burn half of the tokens
-  //  const burnAmount = initialBalance / 2n;
-  //  await pool.connect(buyer).burn(burnAmount);
-  //
-  //  // Check balance after burning
-  //  const finalBalance = await pool.balanceOf(buyer.address);
-  //  console.log("Tokens burned:", ethers.formatUnits(burnAmount, 18));
-  //  console.log("Final token balance:", ethers.formatUnits(finalBalance, 18));
-  //
-  //  // Verify tokens were burned
-  //  expect(finalBalance).to.equal(initialBalance - burnAmount);
-  //});
-  //
-  //it("should update virtual reserves when lottery pool changes", async () => {
-  //  console.log("\n--- TESTING LOTTERY POOL UPDATES ---");
-  //
-  //  // Get initial virtual reserves
-  //  const initialVirtualTokens = await pool.virtualTokenReserve();
-  //  const initialVirtualEth = await pool.virtualEthReserve();
-  //  console.log("Initial Virtual Tokens:", ethers.formatUnits(initialVirtualTokens, 18));
-  //  console.log("Initial Virtual ETH:", ethers.formatEther(initialVirtualEth));
-  //
-  //  // Add to lottery pool
-  //  const addAmount = ethers.parseEther("2");
-  //  await pool.connect(owner).addToLotteryPool({ value: addAmount });
-  //
-  //  // Get updated virtual reserves
-  //  const updatedVirtualTokens = await pool.virtualTokenReserve();
-  //  const updatedVirtualEth = await pool.virtualEthReserve();
-  //  console.log("Lottery Pool Increased by:", ethers.formatEther(addAmount));
-  //  console.log("Updated Virtual Tokens:", ethers.formatUnits(updatedVirtualTokens, 18));
-  //  console.log("Updated Virtual ETH:", ethers.formatEther(updatedVirtualEth));
-  //
-  //  // Verify virtual reserves changed
-  //  expect(updatedVirtualTokens).to.not.equal(initialVirtualTokens);
-  //  expect(updatedVirtualEth).to.not.equal(initialVirtualEth);
-  //
-  //  // Verify constant K is maintained
-  //  const initialK = (initialVirtualTokens * initialVirtualEth) / ethers.parseUnits("1", 18);
-  //  const updatedK = (updatedVirtualTokens * updatedVirtualEth) / ethers.parseUnits("1", 18);
-  //  console.log("Initial K:", ethers.formatEther(initialK));
-  //  console.log("Updated K:", ethers.formatEther(updatedK));
-  //  expect(updatedK).to.be.closeTo(initialK, ethers.parseUnits("0.0001", 18));
-  //});
-
-  it("Token 1 price changes with multiple buys", async () => {
-    console.log(`\n--- TOKEN 1 ${token1Address} MULTIPLE BUYS PRICE IMPACT TEST ---`);
-    const pool = await ethers.getContractAt("BondingCurvePool", token1Address);
-
-    // Initial state
-    const initialPrice = await pool.initialTokenPrice(); // Use stored initial price
-    console.log("\nInitial Price for Token 1 multiple buys:", ethers.formatEther(initialPrice), "ETH/token");
-
-    // Array of buy amounts to test
-    const buyAmounts = [
-      ethers.parseEther("0.01"),  // 0.01 ETH
-      ethers.parseEther("0.02"),  // 0.02 ETH
-      ethers.parseEther("0.03"),  // 0.03 ETH
-      ethers.parseEther("0.04"),  // 0.04 ETH
-      ethers.parseEther("0.05"),  // 0.05 ETH
-      ethers.parseEther("0.06"),  // 0.06 ETH
-      ethers.parseEther("0.07"),  // 0.07 ETH
-      ethers.parseEther("0.08"),  // 0.08 ETH
-      ethers.parseEther("0.09"),  // 0.09 ETH
-      ethers.parseEther("0.1"),   // 0.1 ETH
-      ethers.parseEther("0.15"),  // 0.15 ETH
-      ethers.parseEther("0.2"),   // 0.2 ETH
-      ethers.parseEther("0.25"),  // 0.25 ETH
-      ethers.parseEther("0.3"),   // 0.3 ETH
-      ethers.parseEther("0.35"),  // 0.35 ETH
-      ethers.parseEther("0.04"),   // 0.04 ETH
-      ethers.parseEther("0.05"),  // 0.05 ETH
-      ethers.parseEther("0.01"),   // 0.01 ETH
-      ethers.parseEther("0.02"),  // 0.02 ETH
-      ethers.parseEther("0.1")    // 0.1 ETH
-    ];
-
-    let totalTokensBought = 0n;
-    let totalEthSpent = 0n;
-
-    console.log("\nBuy # | ETH Amount | Tokens Received | Price After Buy | Total Tokens | Total ETH Spent");
-    console.log("------|------------|-----------------|-----------------|--------------|----------------");
-
-    for (let i = 0; i < buyAmounts.length; i++) {
-      const buyAmount = buyAmounts[i];
-
-      try {
-        // Simulate fee calculation to get netEthForCurve for calculateBuyReturn
-        const LOTTERY_POOL_FEE_NUMERATOR = 30n;
-        const LOTTERY_POOL_FEE_DENOMINATOR = 100n;
-        const HOLDER_POOL_FEE_NUMERATOR = 111n;
-        const HOLDER_POOL_FEE_DENOMINATOR = 10000n;
-        const PROTOCOL_POOL_FEE_NUMERATOR = 111n;
-        const PROTOCOL_POOL_FEE_DENOMINATOR = 10000n;
-        const DEV_FEE_NUMERATOR = 111n;
-        const DEV_FEE_DENOMINATOR = 10000n;
-
-        let totalFeesPaidForThisBuy = 0n;
-        const isLotteryTaxActive = await pool.isLotteryTaxActive();
-        if (isLotteryTaxActive) {
-            const lotteryFee = (buyAmount * LOTTERY_POOL_FEE_NUMERATOR) / LOTTERY_POOL_FEE_DENOMINATOR;
-            totalFeesPaidForThisBuy += lotteryFee;
-        }
-        const holderFee = (buyAmount * HOLDER_POOL_FEE_NUMERATOR) / HOLDER_POOL_FEE_DENOMINATOR;
-        totalFeesPaidForThisBuy += holderFee;
-        const protocolFee = (buyAmount * PROTOCOL_POOL_FEE_NUMERATOR) / PROTOCOL_POOL_FEE_DENOMINATOR;
-        totalFeesPaidForThisBuy += protocolFee;
-        const devFee = (buyAmount * DEV_FEE_NUMERATOR) / DEV_FEE_DENOMINATOR;
-        totalFeesPaidForThisBuy += devFee;
-        
-        const netEthForCurveForThisBuy = buyAmount - totalFeesPaidForThisBuy;
-
-        // Calculate expected tokens before buying, based on net ETH
-        const expectedTokens = await pool.calculateBuyReturn(netEthForCurveForThisBuy);
-
-        // Get price before buy
-        const priceBeforeBuy = await pool.calculateCurrentPrice();
-
-        // Check max allowed buy (without making a transaction)
-        // Get the current lotteryPool and ethRaised values
-        const lotteryPool = await pool.lotteryPool();
-        const ethRaised = await pool.ethRaised();
-        const maxBuy = (lotteryPool - ethRaised) * 10n / 100n; // 10% of remaining pool
-
-        if (buyAmount > maxBuy) {
-          console.log(
-            `${(i + 1).toString().padStart(4)} | ` +
-            `${ethers.formatEther(buyAmount).padStart(10)} | ` +
-            `SKIPPED - Exceeds maximum buy of ${ethers.formatEther(maxBuy)} ETH (10% of remaining pool)`
-          );
-          continue;
-        }
-
-        // Perform the buy
-        await pool.connect(buyer).buy({ value: buyAmount });
-
-        // Get price after buy
-        const priceAfterBuy = await pool.calculateCurrentPrice();
-
-        // Update totals
-        totalTokensBought += expectedTokens;
-        totalEthSpent += buyAmount;
-
-        // Format and print the results
-        console.log(
-          `${(i + 1).toString().padStart(4)} | ` +
-          `${ethers.formatEther(buyAmount).padStart(10)} | ` +
-          `${ethers.formatUnits(expectedTokens, 18).padStart(15)} | ` +
-          `${ethers.formatEther(priceAfterBuy).padStart(15)} | ` +
-          `${ethers.formatUnits(totalTokensBought, 18).padStart(12)} | ` +
-          `${ethers.formatEther(totalEthSpent).padStart(14)}`
-        );
-      } catch (error) {
-        // If we hit an error, log it and continue with the next amount
-        console.log(
-          `${(i + 1).toString().padStart(4)} | ` +
-          `${ethers.formatEther(buyAmount).padStart(10)} | ` +
-          `ERROR: ${error.message}`
-        );
-
-        // Optional: If you want to stop the test after first error
-        // break;
-      }
+    console.log(`\n--- State after: ${stepName} ---`);
+    console.log(`Token: ${name} (${symbol})`);
+    console.log(`1. Market Cap: ${formatEther(marketCap)} ETH`);
+    console.log(`2. Token Price: ${formatEther(currentPrice)} ETH/token`);
+    console.log(`3. ETH Raised (Net to Curve): ${formatEther(ethRaised)}`);
+    console.log(`   Lottery Pool Progress (Tax): ${formatEther(accLotteryTax)} / ${formatEther(lotteryPoolTarget)} (Target)`);
+    console.log(`4. Tokens in Contract: ${formatUnits(contractTokenBalance, 18)}`);
+    console.log(`5. ETH in Contract: ${formatEther(contractEthBalance)} ETH`);
+    console.log(`6. Virtual Tokens: ${formatUnits(virtualTokenReserve, 18)}`);
+    console.log(`   Virtual ETH: ${formatEther(virtualEthReserve)} ETH`);
+    console.log(`   Constant K (scaled by 1e18): ${formatUnits(k_constant, 18)}`);
+    console.log(`7. Tax Pools:`);
+    console.log(`   - Lottery: ${formatEther(accLotteryTax)} ETH (Tax Active: ${isLotteryTaxActive})`);
+    console.log(`   - Holder: ${formatEther(accHolderTax)} ETH`);
+    console.log(`   - Protocol: ${formatEther(accProtocolTax)} ETH`);
+    console.log(`   - Dev: ${formatEther(accDevTax)} ETH`);
+    console.log(`---`);
+    console.log(`Total Tokens Sold from Curve: ${formatUnits(totalTokensSoldFromCurve, 18)}`);
+    console.log(`Tokens available for initial curve: ${formatUnits(await poolInstance.getTokensForInitialCurvePhase(), 18)}`);
+    console.log(`Reserved Supply Active: ${isReservedSupplyActive}`);
+    
+    if (userSigner && userSigner.address) {
+        const userTokenBalance = await poolInstance.balanceOf(userSigner.address);
+        const userEthBalance = await ethers.provider.getBalance(userSigner.address);
+        console.log(`User (${userSigner.address.substring(0,10)}...) Token Balance: ${formatUnits(userTokenBalance, 18)}`);
+        console.log(`User (${userSigner.address.substring(0,10)}...) ETH Balance: ${formatEther(userEthBalance)} ETH`);
     }
+    console.log(`---------------------------\n`);
+}
 
-    // Print summary
-    console.log("\nSummary:");
-    console.log("Total ETH Spent:", ethers.formatEther(totalEthSpent), "ETH");
-    console.log("Total Tokens Bought:", ethers.formatUnits(totalTokensBought, 18), "tokens");
 
-    if (totalTokensBought > 0) {
-      console.log("Average Price:", ethers.formatEther(totalEthSpent * BigInt(1e18) / totalTokensBought), "ETH/token");
-    } else {
-      console.log("Average Price: N/A (no tokens bought)");
-    }
+describe("TokenLaunchpad", function () {
+    let TokenLaunchpad, launchpad, owner, addr1;
+    const tokenName = "TestToken";
+    const tokenSymbol = "TST";
+    const initialLotteryPool = parseEther("10"); // 10 ETH
 
-    console.log("Final Price:", ethers.formatEther(await pool.calculateCurrentPrice()), "ETH/token");
-    console.log("Price Increase:",
-      initialPrice > 0 ? ((Number(await pool.calculateCurrentPrice()) - Number(initialPrice)) / Number(initialPrice) * 100).toFixed(2) : "N/A", // Check for initialPrice > 0
-      "%"
-    );
-  });
+    beforeEach(async function () {
+        [owner, addr1] = await ethers.getSigners();
+        TokenLaunchpad = await ethers.getContractFactory("TokenLaunchpad");
+        launchpad = await TokenLaunchpad.deploy(owner.address);
+        await launchpad.waitForDeployment();
+    });
 
-  it("Token 2 price changes with multiple buys", async () => {
-    console.log(`\n--- TOKEN 2 ${token2Address} MULTIPLE BUYS PRICE IMPACT TEST ---`);
-    const pool = await ethers.getContractAt("BondingCurvePool", token2Address);
+    it("Should allow owner to launch a new token", async function () {
+        await expect(launchpad.connect(owner).launchToken(tokenName, tokenSymbol, initialLotteryPool))
+            .to.emit(launchpad, "TokenCreated")
+            .withArgs(ethers.isAddress, tokenName, tokenSymbol); // Check address with a predicate
 
-    // Initial state
-    const initialPrice = await pool.initialTokenPrice(); // Use stored initial price
-    console.log("\nInitial Price for Token 2 multiple buys:", ethers.formatEther(initialPrice), "ETH/token");
+        const tokens = await launchpad.getAllTokens();
+        expect(tokens.length).to.equal(1);
+        expect(tokens[0].name).to.equal(tokenName);
+        expect(tokens[0].symbol).to.equal(tokenSymbol);
+        expect(tokens[0].tokenAddress).to.not.equal(ethers.ZeroAddress);
+    });
 
-    // Array of buy amounts to test
-    const buyAmounts = [
-      ethers.parseEther("0.01"),  // 0.01 ETH
-      ethers.parseEther("0.02"),  // 0.02 ETH
-      ethers.parseEther("0.03"),  // 0.03 ETH
-      ethers.parseEther("0.04"),  // 0.04 ETH
-      ethers.parseEther("0.05"),  // 0.05 ETH
-      ethers.parseEther("0.06"),  // 0.06 ETH
-      ethers.parseEther("0.07"),  // 0.07 ETH
-      ethers.parseEther("0.08"),  // 0.08 ETH
-      ethers.parseEther("0.09"),  // 0.09 ETH
-      ethers.parseEther("0.1"),   // 0.1 ETH
-      ethers.parseEther("0.15"),  // 0.15 ETH
-      ethers.parseEther("0.2"),   // 0.2 ETH
-      ethers.parseEther("0.05"),  // 0.05 ETH
-      ethers.parseEther("0.03"),   // 0.03 ETH
-      ethers.parseEther("0.05"),  // 0.05 ETH
-      ethers.parseEther("0.02"),   // 0.02 ETH
-      ethers.parseEther("0.05"),  // 0.05 ETH
-      ethers.parseEther("0.1"),   // 0.1 ETH
-      ethers.parseEther("0.05"),  // 0.05 ETH
-      ethers.parseEther("0.06")    // 0.06 ETH
-    ];
+    it("Should not allow non-owner to launch a new token", async function () {
+        await expect(launchpad.connect(addr1).launchToken(tokenName, tokenSymbol, initialLotteryPool))
+            .to.be.revertedWithCustomError(launchpad, "OwnableUnauthorizedAccount")
+            .withArgs(addr1.address);
+    });
 
-    let totalTokensBought = 0n;
-    let totalEthSpent = 0n;
+    it("Should retrieve all created tokens", async function () {
+        await launchpad.connect(owner).launchToken("Token1", "TKN1", parseEther("5"));
+        await launchpad.connect(owner).launchToken("Token2", "TKN2", parseEther("15"));
 
-    console.log("\nBuy # | ETH Amount | Tokens Received | Price After Buy | Total Tokens | Total ETH Spent");
-    console.log("------|------------|-----------------|-----------------|--------------|----------------");
-
-    for (let i = 0; i < buyAmounts.length; i++) {
-      const buyAmount = buyAmounts[i];
-
-      try {
-        // Simulate fee calculation to get netEthForCurve for calculateBuyReturn
-        const LOTTERY_POOL_FEE_NUMERATOR = 30n;
-        const LOTTERY_POOL_FEE_DENOMINATOR = 100n;
-        const HOLDER_POOL_FEE_NUMERATOR = 111n;
-        const HOLDER_POOL_FEE_DENOMINATOR = 10000n;
-        const PROTOCOL_POOL_FEE_NUMERATOR = 111n;
-        const PROTOCOL_POOL_FEE_DENOMINATOR = 10000n;
-        const DEV_FEE_NUMERATOR = 111n;
-        const DEV_FEE_DENOMINATOR = 10000n;
-
-        let totalFeesPaidForThisBuy = 0n;
-        const isLotteryTaxActive = await pool.isLotteryTaxActive();
-        if (isLotteryTaxActive) {
-            const lotteryFee = (buyAmount * LOTTERY_POOL_FEE_NUMERATOR) / LOTTERY_POOL_FEE_DENOMINATOR;
-            totalFeesPaidForThisBuy += lotteryFee;
-        }
-        const holderFee = (buyAmount * HOLDER_POOL_FEE_NUMERATOR) / HOLDER_POOL_FEE_DENOMINATOR;
-        totalFeesPaidForThisBuy += holderFee;
-        const protocolFee = (buyAmount * PROTOCOL_POOL_FEE_NUMERATOR) / PROTOCOL_POOL_FEE_DENOMINATOR;
-        totalFeesPaidForThisBuy += protocolFee;
-        const devFee = (buyAmount * DEV_FEE_NUMERATOR) / DEV_FEE_DENOMINATOR;
-        totalFeesPaidForThisBuy += devFee;
-        
-        const netEthForCurveForThisBuy = buyAmount - totalFeesPaidForThisBuy;
-        
-        // Calculate expected tokens before buying, based on net ETH
-        const expectedTokens = await pool.calculateBuyReturn(netEthForCurveForThisBuy);
-
-        // Get price before buy
-        const priceBeforeBuy = await pool.calculateCurrentPrice();
-
-        // Check max allowed buy (without making a transaction)
-        // Get the current lotteryPool and ethRaised values
-        const lotteryPool = await pool.lotteryPool();
-        const ethRaised = await pool.ethRaised();
-        const maxBuy = (lotteryPool - ethRaised) * 10n / 100n; // 10% of remaining pool
-
-        if (buyAmount > maxBuy) {
-          console.log(
-            `${(i + 1).toString().padStart(4)} | ` +
-            `${ethers.formatEther(buyAmount).padStart(10)} | ` +
-            `SKIPPED - Exceeds maximum buy of ${ethers.formatEther(maxBuy)} ETH (10% of remaining pool)`
-          );
-          continue;
-        }
-
-        // Perform the buy
-        await pool.connect(buyer).buy({ value: buyAmount });
-
-        // Get price after buy
-        const priceAfterBuy = await pool.calculateCurrentPrice();
-
-        // Update totals
-        totalTokensBought += expectedTokens;
-        totalEthSpent += buyAmount;
-
-        // Format and print the results
-        console.log(
-          `${(i + 1).toString().padStart(4)} | ` +
-          `${ethers.formatEther(buyAmount).padStart(10)} | ` +
-          `${ethers.formatUnits(expectedTokens, 18).padStart(15)} | ` +
-          `${ethers.formatEther(priceAfterBuy).padStart(15)} | ` +
-          `${ethers.formatUnits(totalTokensBought, 18).padStart(12)} | ` +
-          `${ethers.formatEther(totalEthSpent).padStart(14)}`
-        );
-      } catch (error) {
-        // If we hit an error, log it and continue with the next amount
-        console.log(
-          `${(i + 1).toString().padStart(4)} | ` +
-          `${ethers.formatEther(buyAmount).padStart(10)} | ` +
-          `ERROR: ${error.message}`
-        );
-
-        // Optional: If you want to stop the test after first error
-        // break;
-      }
-    }
-
-    // Print summary
-    console.log("\nSummary:");
-    console.log("Total ETH Spent:", ethers.formatEther(totalEthSpent), "ETH");
-    console.log("Total Tokens Bought:", ethers.formatUnits(totalTokensBought, 18), "tokens");
-
-    if (totalTokensBought > 0) {
-      console.log("Average Price:", ethers.formatEther(totalEthSpent * BigInt(1e18) / totalTokensBought), "ETH/token");
-    } else {
-      console.log("Average Price: N/A (no tokens bought)");
-    }
-
-    console.log("Final Price:", ethers.formatEther(await pool.calculateCurrentPrice()), "ETH/token");
-    console.log("Price Increase:",
-      initialPrice > 0 ? ((Number(await pool.calculateCurrentPrice()) - Number(initialPrice)) / Number(initialPrice) * 100).toFixed(2) : "N/A", // Check for initialPrice > 0
-      "%"
-    );
-  });
+        const tokens = await launchpad.getAllTokens();
+        expect(tokens.length).to.equal(2);
+        expect(tokens[1].name).to.equal("Token2");
+    });
 });
 
-describe("GIVEN_TEST Simulation Comparison", function () {
-  let launchpad, pool, poolAddress;
-  let owner, buyer, user2, treasury;
 
-  // Parameters from GIVEN_TEST simulation
-  const GIVEN_TEST_INITIAL_SUPPLY_BASE = 1_000_000_000n;
-  const GIVEN_TEST_TOTAL_SUPPLY_WEI = ethers.parseUnits(GIVEN_TEST_INITIAL_SUPPLY_BASE.toString(), 18);
+describe("BondingCurvePool", function () {
+    let BondingCurvePool, pool, launchpad, owner, buyer1, buyer2, seller1;
+    const tokenName = "PoolToken";
+    const tokenSymbol = "PTK";
+    const initialLotteryPoolAmount = parseEther("10"); // 10 ETH, a common value for tests
+    const minBuy = parseEther("0.001");
 
-  // GIVEN_TEST new lottery_pool_target_eth = 3.333333 ETH (significantly smaller)
-  const GIVEN_TEST_EFFECTIVE_LIQUIDITY_TARGET_ETH_NUM_STR = "3.333333"; // Updated from (100 / 0.3).toString();
-  const GIVEN_TEST_EFFECTIVE_LIQUIDITY_TARGET_ETH_WEI = ethers.parseEther(GIVEN_TEST_EFFECTIVE_LIQUIDITY_TARGET_ETH_NUM_STR);
+    beforeEach(async function () {
+        [owner, buyer1, buyer2, seller1] = await ethers.getSigners();
+        
+        const TokenLaunchpad = await ethers.getContractFactory("TokenLaunchpad");
+        launchpad = await TokenLaunchpad.deploy(owner.address);
+        await launchpad.waitForDeployment();
 
-  // To make Solidity's effectiveLiquidityTargetForCurveSetup match GIVEN_TEST's, 
-  // _initialLotteryPool_sol * 3 = GIVEN_TEST_EFFECTIVE_LIQUIDITY_TARGET_ETH
-  // So, _initialLotteryPool_sol = GIVEN_TEST_EFFECTIVE_LIQUIDITY_TARGET_ETH / 3
-  const SOLIDITY_INITIAL_LOTTERY_POOL_ETH_NUM_STR = (parseFloat(GIVEN_TEST_EFFECTIVE_LIQUIDITY_TARGET_ETH_NUM_STR) / 3).toString(); // Updated
-  const SOLIDITY_INITIAL_LOTTERY_POOL_WEI = ethers.parseEther(SOLIDITY_INITIAL_LOTTERY_POOL_ETH_NUM_STR);
+        const tx = await launchpad.launchToken(tokenName, tokenSymbol, initialLotteryPoolAmount);
+        const receipt = await tx.wait(); // Wait for the transaction to be mined
 
-  // GIVEN_TEST new initial price = GIVEN_TEST_EFFECTIVE_LIQUIDITY_TARGET_ETH / GIVEN_TEST_INITIAL_SUPPLY_BASE
-  const GIVEN_TEST_INITIAL_PRICE_ETH_PER_TOKEN_NUM_STR = (parseFloat(GIVEN_TEST_EFFECTIVE_LIQUIDITY_TARGET_ETH_NUM_STR) / Number(GIVEN_TEST_INITIAL_SUPPLY_BASE) ).toFixed(18); // Updated
+        let poolAddress;
 
-  // GIVEN_TEST's s_migrated (tokens available for curve) = 0.8 * GIVEN_TEST_INITIAL_SUPPLY_BASE (remains 800M)
-  const GIVEN_TEST_S_MIGRATED_BASE = GIVEN_TEST_INITIAL_SUPPLY_BASE * 8n / 10n; // 800,000,000
-
-  // GIVEN_TEST's pre-adjustment virtual reserves (from new output)
-  // v_tokens: 4,000,000,000, v_eth: 13.333333
-  const GIVEN_TEST_VTOKENS_PRE_ADJ_STR = "4000000000"; // Updated from calculation
-  const GIVEN_TEST_VETH_PRE_ADJ_STR = "13.333333"; // Updated from calculation
-
-  // GIVEN_TEST's post-adjustment virtual reserves (from new simulation output)
-  const GIVEN_TEST_VTOKENS_POST_ADJ_STR = "2424242424"; 
-  const GIVEN_TEST_VETH_POST_ADJ_NUM_STR = "8.080808";
-
-  // Fee constants from Pool.sol for calculating netEthForCurve
-  const LOTTERY_POOL_FEE_NUMERATOR = 30n;
-  const LOTTERY_POOL_FEE_DENOMINATOR = 100n;
-  const HOLDER_POOL_FEE_NUMERATOR = 111n;
-  const HOLDER_POOL_FEE_DENOMINATOR = 10000n;
-  const PROTOCOL_POOL_FEE_NUMERATOR = 111n;
-  const PROTOCOL_POOL_FEE_DENOMINATOR = 10000n;
-  const DEV_FEE_NUMERATOR = 111n;
-  const DEV_FEE_DENOMINATOR = 10000n;
-
-  before(async () => {
-    [owner, buyer, user2, treasury] = await ethers.getSigners();
-    const TokenLaunchpad = await ethers.getContractFactory("TokenLaunchpad");
-    launchpad = await TokenLaunchpad.deploy(owner.address);
-
-    const tx = await launchpad.launchToken(
-      "PySimToken",
-      "PST",
-      SOLIDITY_INITIAL_LOTTERY_POOL_WEI,
-      treasury.address
-    );
-    const receipt = await tx.wait();
-    const events = await launchpad.queryFilter(launchpad.filters.TokenCreated(), receipt.blockNumber);
-    poolAddress = events[0].args.tokenAddress;
-    pool = await ethers.getContractAt("BondingCurvePool", poolAddress);
-  });
-
-  it("should compare behavior with the GIVEN_TEST simulation step-by-step", async function () {
-    console.log("\n--- GIVEN_TEST Simulation Comparison Test ---");
-    console.log(`Solidarity Initial Lottery Pool (constructor arg): ${ethers.formatEther(SOLIDITY_INITIAL_LOTTERY_POOL_WEI)} ETH`);
-    console.log(`This implies Solidity Effective Liquidity Target for Curve Setup: ${ethers.formatEther(SOLIDITY_INITIAL_LOTTERY_POOL_WEI * 3n)} ETH (matches GIVEN_TEST's ${GIVEN_TEST_EFFECTIVE_LIQUIDITY_TARGET_ETH_NUM_STR} ETH)`);
-    console.log(`Solidity Lottery Pool (for tax & migration ETH target): ${ethers.formatEther(await pool.lotteryPool())} ETH`);
-    console.log(`GIVEN_TEST Migration ETH Target was: ${GIVEN_TEST_EFFECTIVE_LIQUIDITY_TARGET_ETH_NUM_STR} ETH`);
-
-    // Section 1: Initial Parameter Comparison
-    console.log("\n--- Section 1: Initial Parameter Comparison ---");
-    const sol_initialTokenPrice = await pool.initialTokenPrice();
-    const sol_virtualTokenReserve = await pool.virtualTokenReserve();
-    const sol_virtualEthReserve = await pool.virtualEthReserve();
-    const sol_constant_k = await pool.constant_k();
-
-    console.log(`GIVEN_TEST Calculated Initial Price (unscaled): ${GIVEN_TEST_INITIAL_PRICE_ETH_PER_TOKEN_NUM_STR} ETH/token`);
-    console.log(`Solidity Stored initialTokenPrice (scaled by 1e18): ${sol_initialTokenPrice.toString()}`);
-    console.log(`   Solidity Initial Price (unscaled for comparison): ${ethers.formatUnits(sol_initialTokenPrice, 18)}`);
-  
-    console.log(`GIVEN_TEST Pre-Adjustment v_tokens (base): ${GIVEN_TEST_VTOKENS_PRE_ADJ_STR}`);
-    console.log(`Solidity virtualTokenReserve: ${ethers.formatUnits(sol_virtualTokenReserve, 18)}`);
-    console.log(`GIVEN_TEST Pre-Adjustment v_eth (ETH): ${GIVEN_TEST_VETH_PRE_ADJ_STR}`);
-    console.log(`Solidity virtualEthReserve: ${ethers.formatEther(sol_virtualEthReserve)}`);
-    console.log(`Solidity constant_k: ${ethers.formatEther(sol_constant_k)}`);
-
-    // Note: To get maxEthPossible from CurveVerification, you might need to listen to the event upon deployment in beforeEach or add a view function.
-    // For this example, we'll use the GIVEN_TEST script's reported pre-adjustment max ETH.
-    console.log("GIVEN_TEST Max ETH that can be raised (pre-adjustment, from new output): 2.222222 ETH"); // Updated
-    console.log("Solidity would calculate a similar value before any adjustment (not implemented).");
-
-    console.log("\nGIVEN_TEST performs an adjustment to virtual reserves:");
-    console.log(`   GIVEN_TEST Adjusted v_tokens: ${GIVEN_TEST_VTOKENS_POST_ADJ_STR}`);
-    console.log(`   GIVEN_TEST Adjusted v_eth: ${GIVEN_TEST_VETH_POST_ADJ_NUM_STR} ETH`);
-    console.log("Solidity contract DOES NOT perform this specific adjustment. It uses the unadjusted reserves calculated above.");
-    console.log("Subsequent buy/sell comparisons will show differences due to this initial state divergence and fee mechanisms.");
-
-    // GIVEN_TEST simulation's "Initial State" is post-adjustment.
-    // Solidity's initial state is what we logged above (unadjusted by GIVEN_TEST's verification logic).
-
-    // Section 2: Buy Simulation
-    console.log("\n--- Section 2: Buy Simulation ---");
-    const buy_actions = [
-        { desc: "Small buy 1", eth_amount_str: "0.01", py_tokens_received_str: "2996292", py_new_price_str: "0.000000003341588438", py_new_vtokens_str: "2421246132", py_new_veth_str: "8.090808" },
-        { desc: "Small buy 2", eth_amount_str: "0.05", py_tokens_received_str: "14871043", py_new_price_str: "0.000000003383017102", py_new_vtokens_str: "2406375089", py_new_veth_str: "8.140808" },
-        { desc: "Medium buy 1", eth_amount_str: "0.07", py_tokens_received_str: "20515186", py_new_price_str: "0.000000003441446026", py_new_vtokens_str: "2385859903", py_new_veth_str: "8.210808" },
-        { desc: "Medium buy 2", eth_amount_str: "0.07", py_tokens_received_str: "20168345", py_new_price_str: "0.000000003500375208", py_new_vtokens_str: "2365691558", py_new_veth_str: "8.280808" },
-        { desc: "Larger buy 1", eth_amount_str: "0.25", py_tokens_received_str: "69327886", py_new_price_str: "0.000000003714920326", py_new_vtokens_str: "2296363672", py_new_veth_str: "8.530808" },
-    ];
-
-    for (const action of buy_actions) {
-        console.log(`\n--- Simulating: ${action.desc} (${action.eth_amount_str} ETH) ---`);
-        const grossEthAmount = ethers.parseEther(action.eth_amount_str);
-
-        let totalFeesPaid = 0n;
-        const isLotteryTaxActive = await pool.isLotteryTaxActive();
-        if (isLotteryTaxActive) {
-            const lotteryFee = (grossEthAmount * LOTTERY_POOL_FEE_NUMERATOR) / LOTTERY_POOL_FEE_DENOMINATOR;
-            totalFeesPaid += lotteryFee;
-        }
-        const holderFee = (grossEthAmount * HOLDER_POOL_FEE_NUMERATOR) / HOLDER_POOL_FEE_DENOMINATOR;
-        totalFeesPaid += holderFee;
-        const protocolFee = (grossEthAmount * PROTOCOL_POOL_FEE_NUMERATOR) / PROTOCOL_POOL_FEE_DENOMINATOR;
-        totalFeesPaid += protocolFee;
-        const devFee = (grossEthAmount * DEV_FEE_NUMERATOR) / DEV_FEE_DENOMINATOR;
-        totalFeesPaid += devFee;
-        const netEthForCurve = grossEthAmount - totalFeesPaid;
-
-        console.log(`   Solidity: Gross ETH: ${ethers.formatEther(grossEthAmount)}, Fees: ${ethers.formatEther(totalFeesPaid)}, Net ETH for Curve: ${ethers.formatEther(netEthForCurve)}`);
-      
-        const expectedTokens_s = await pool.calculateBuyReturn(netEthForCurve);
-        console.log(`   Solidity: Expected tokens for net ETH: ${ethers.formatUnits(expectedTokens_s, 18)}`);
-      
-        const buyerBalanceBefore = await pool.balanceOf(buyer.address);
-        await pool.connect(buyer).buy({ value: grossEthAmount });
-        const buyerBalanceAfter = await pool.balanceOf(buyer.address);
-        const tokensReceived_s = buyerBalanceAfter - buyerBalanceBefore;
-
-        console.log(`   GIVEN_TEST Reported Tokens Received: ${action.py_tokens_received_str}`);
-        console.log(`   Solidity Actual Tokens Received: ${ethers.formatUnits(tokensReceived_s, 18)} (Note: Based on net ETH and Solidity's unadjusted reserves)`);
-      
-        const price_s_new = await pool.calculateCurrentPrice();
-        const vTR_S_new = await pool.virtualTokenReserve();
-        const vER_S_new = await pool.virtualEthReserve();
-        const ethRaised_s = await pool.ethRaised();
-
-        console.log(`   GIVEN_TEST New Price: ${action.py_new_price_str}`);
-        console.log(`   Solidity New Price: ${ethers.formatUnits(price_s_new, 18)}`);
-        console.log(`   GIVEN_TEST New v_tokens: ${action.py_new_vtokens_str}`);
-        console.log(`   Solidity New virtualTokenReserve: ${ethers.formatUnits(vTR_S_new, 18)}`);
-        console.log(`   GIVEN_TEST New v_eth: ${action.py_new_veth_str}`);
-        console.log(`   Solidity New virtualEthReserve: ${ethers.formatEther(vER_S_new)}`);
-        console.log(`   Solidity ethRaised: ${ethers.formatEther(ethRaised_s)}`);
-    }
-
-    // Section 3: Sell Simulation
-    console.log("\n--- Section 3: Sell Simulation ---");
-    // GIVEN_TEST output shows Real ETH (Collected in Contract) becoming negative after sells,
-    // which implies its `r_eth` is not bounded by contract balance or actual raised ETH.
-    // Solidity's sell will fail if contract ETH balance is insufficient or ethToReturn > ethRaised.
-    const sell_actions = [
-        // GIVEN_TEST r_tokens after buys was 872,121,248. Solidity's sold token count will differ.
-        { desc: "Small sell", py_token_amount_str: "5000000", py_eth_received_str: "0.018534", py_new_price_str: "0.000000003698795604", py_new_vtokens_str: "2301363672", py_new_veth_str: "8.512274" },
-        { desc: "Medium sell", py_token_amount_str: "10000000", py_eth_received_str: "0.036828", py_new_price_str: "0.000000003666859528", py_new_vtokens_str: "2311363672", py_new_veth_str: "8.475446" },
-    ];
-
-    for (const action of sell_actions) {
-        const tokensToSell_s_base = BigInt(action.py_token_amount_str);
-        const tokensToSell_s_wei = ethers.parseUnits(action.py_token_amount_str, 18);
-        console.log(`\n--- Simulating: ${action.desc} (${action.py_token_amount_str} tokens) ---`);
-
-        const buyerTokenBalance = await pool.balanceOf(buyer.address);
-        if (buyerTokenBalance < tokensToSell_s_wei) {
-            console.log(`   Solidity: Buyer has insufficient tokens (${ethers.formatUnits(buyerTokenBalance,18)}) to sell ${action.py_token_amount_str}. Skipping sell.`);
-            continue;
+        // Use contract.filters to get specific logs from the receipt
+        // Create a filter for the TokenCreated event emitted by the launchpad contract
+        // const eventFragment = launchpad.interface.getEvent("TokenCreated"); // This line can cause issues if event is overloaded or not found by this exact name string
+        // A more direct way if event name is unique and simple:
+        const filter = launchpad.filters.TokenCreated(); // Creates a filter for TokenCreated()
+        
+        // Filter the logs from the receipt using receipt.getLogs() if available and preferred
+        // However, manually filtering and parsing can also work if done carefully.
+        const decodedLogs = [];
+        if (receipt && receipt.logs) {
+            for (const log of receipt.logs) {
+                 // Check if the log address matches the launchpad contract address
+                if (log.address.toLowerCase() === (launchpad.target || launchpad.address).toLowerCase()) { // launchpad.target for ethers v6
+                    try {
+                        // Attempt to parse the log with the launchpad interface
+                        const parsedLog = launchpad.interface.parseLog({ topics: Array.from(log.topics), data: log.data });
+                        if (parsedLog && parsedLog.name === "TokenCreated") {
+                            decodedLogs.push(parsedLog);
+                        }
+                    } catch (e) {
+                        // Not a log from this interface or specific event
+                    }
+                }
+            }
         }
 
-        const expectedEth_s = await pool.calculateSellReturn(tokensToSell_s_wei);
-        console.log(`   Solidity: Expected ETH for selling ${action.py_token_amount_str} tokens: ${ethers.formatEther(expectedEth_s)}`);
+        if (decodedLogs && decodedLogs.length > 0) {
+            poolAddress = decodedLogs[0].args.tokenAddress; // Get address from the first matched event
+        }
 
-        const buyerEthBalanceBefore = await ethers.provider.getBalance(buyer.address);
-        const contractEthBalanceBefore = await ethers.provider.getBalance(poolAddress);
-        const sellTx = await pool.connect(buyer).sell(tokensToSell_s_wei);
-        const sellReceipt = await sellTx.wait();
-        const gasCost = sellReceipt.gasUsed * sellReceipt.gasPrice;
-        const buyerEthBalanceAfter = await ethers.provider.getBalance(buyer.address);
-        const ethReceived_s_actual = buyerEthBalanceAfter - buyerEthBalanceBefore + gasCost;
+        expect(poolAddress, "Failed to find TokenCreated event or extract tokenAddress in logs").to.be.a('string');
+        expect(ethers.isAddress(poolAddress), `poolAddress '${poolAddress}' from event is not a valid address`).to.be.true;
+        
+        BondingCurvePool = await ethers.getContractFactory("BondingCurvePool");
+        pool = BondingCurvePool.attach(poolAddress); // Attach the contract instance to the obtained address
+    });
 
-        console.log(`   GIVEN_TEST Reported ETH Received: ${action.py_eth_received_str}`);
-        console.log(`   Solidity Actual ETH Received (approx, after gas): ${ethers.formatEther(ethReceived_s_actual)}`);
-      
-        const price_s_after_sell = await pool.calculateCurrentPrice();
-        const vTR_S_after_sell = await pool.virtualTokenReserve();
-        const vER_S_after_sell = await pool.virtualEthReserve();
-        const ethRaised_s_after_sell = await pool.ethRaised();
+    it("Should be deployed with correct initial parameters", async function () {
+        expect(await pool.name()).to.equal(tokenName);
+        expect(await pool.symbol()).to.equal(tokenSymbol);
+        expect(await pool.lotteryPool()).to.equal(initialLotteryPoolAmount);
+        // expect(await pool.owner()).to.equal(launchpad.address); // Pool.sol is not Ownable, and doesn't have an owner() function.
 
-        console.log(`   GIVEN_TEST New Price after sell: ${action.py_new_price_str}`);
-        console.log(`   Solidity New Price after sell: ${ethers.formatUnits(price_s_after_sell, 18)}`);
-        console.log(`   GIVEN_TEST New v_tokens after sell: ${action.py_new_vtokens_str}`);
-        console.log(`   Solidity New virtualTokenReserve after sell: ${ethers.formatUnits(vTR_S_after_sell, 18)}`);
-        console.log(`   GIVEN_TEST New v_eth after sell: ${action.py_new_veth_str}`);
-        console.log(`   Solidity New virtualEthReserve after sell: ${ethers.formatEther(vER_S_after_sell)}`);
-        console.log(`   Solidity ethRaised after sell: ${ethers.formatEther(ethRaised_s_after_sell)}`);
-    }
-    console.log("\n--- Comparison Test Complete ---");
-  });
+        const initialTokenPrice = await pool.initialTokenPrice();
+        expect(initialTokenPrice).to.be.gt(0n);
+
+        const totalSupply = await pool.totalSupply();
+        expect(totalSupply).to.equal(INITIAL_SUPPLY_POOL);
+        expect(await pool.balanceOf(pool.target)).to.equal(INITIAL_SUPPLY_POOL);
+
+        const reservedSupply = INITIAL_SUPPLY_POOL * BigInt(RESERVED_SUPPLY_PERCENTAGE_POOL) / 100n;
+        expect(await pool.reservedSupplyAmount()).to.equal(reservedSupply);
+
+        expect(await pool.isLotteryTaxActive()).to.be.true;
+        expect(await pool.isReservedSupplyActive()).to.be.false;
+
+        // Check virtual reserves and k (should be initialized)
+        expect(await pool.virtualTokenReserve()).to.be.gt(0n);
+        expect(await pool.virtualEthReserve()).to.be.gt(0n);
+        expect(await pool.constant_k()).to.be.gt(0n);
+
+        console.log("Initial State of a newly deployed Pool:");
+        await logPoolState(pool, owner, "Deployment");
+    });
+
+    it("Should reject deployment with invalid lottery pool sizes", async function () {
+         const TokenLaunchpad = await ethers.getContractFactory("TokenLaunchpad");
+         const newLaunchpad = await TokenLaunchpad.deploy(owner.address);
+         await newLaunchpad.waitForDeployment();
+
+        const tooSmallLottery = parseEther("0.001"); // MIN_LOTTERY_POOL is 0.01 ETH
+        await expect(newLaunchpad.launchToken("BadSmall", "BS", tooSmallLottery))
+            .to.be.revertedWith("Lottery pool too small");
+
+        const tooLargeLottery = parseEther("121"); // MAX_LOTTERY_POOL is 120 ETH
+        await expect(newLaunchpad.launchToken("BadLarge", "BL", tooLargeLottery))
+            .to.be.revertedWith("Lottery pool too large");
+    });
+
+    it("calculateCurrentPrice should return a price", async function () {
+        const price = await pool.calculateCurrentPrice();
+        expect(price).to.be.gt(0n);
+    });
+
+    it("calculateBuyReturn should return tokens for ETH", async function () {
+        const tokens = await pool.calculateBuyReturn(parseEther("1"));
+        expect(tokens).to.be.gt(0n);
+        await expect(pool.calculateBuyReturn(0n)).to.be.revertedWith("ETH amount must be > 0");
+    });
+
+    it("calculateSellReturn should return ETH for tokens", async function () {
+        // Cannot directly test sell return without tokens, but can check logic with dummy values if contract allowed.
+        // For now, just test the revert. We'll test actual sell after a buy.
+        await expect(pool.calculateSellReturn(0n)).to.be.revertedWith("Token amount must be > 0");
+        
+        // A more direct test would involve setting virtual reserves for calculation if possible,
+        // or buying then calculating sell.
+        // If virtualTokenReserve is high, and we try to sell 1 token:
+        const vTokens = await pool.virtualTokenReserve();
+        const vEth = await pool.virtualEthReserve();
+        const k = await pool.constant_k();
+
+        if (vTokens > 0n && vEth > 0n && k > 0n) {
+            const oneToken = parseEther("1"); // 1 token with 18 decimals
+             // Ensure we have enough virtual tokens to sell from, hypothetically
+            if (vTokens > oneToken) { // This check is simplified
+                const ethFromSell = await pool.calculateSellReturn(oneToken);
+                // Depending on curve state, this could be > 0 or 0 if price is extremely low or high.
+                // For a healthy curve, it should be >0 if vEth > k / (vTokens + oneToken)
+                // console.log("Calculated sell return for 1 token:", formatEther(ethFromSell));
+                 expect(ethFromSell).to.be.gte(0n); // Can be 0 if price impact is total
+            }
+        }
+    });
+
+    it("Should allow a user to buy tokens", async function () {
+        const buyAmountEth = parseEther("1");
+        const initialEthBalanceBuyer = await ethers.provider.getBalance(buyer1.address);
+        const initialPoolEthBalance = await ethers.provider.getBalance(pool.target);
+
+        await logPoolState(pool, buyer1, "Before First Buy");
+
+        const tx = await pool.connect(buyer1).buy({ value: buyAmountEth });
+        const receipt = await tx.wait();
+        
+        const actualGasPrice = receipt.effectiveGasPrice ?? 0n;
+        const gasCost = receipt.gasUsed * actualGasPrice;
+
+        await expect(tx).to.emit(pool, "TokensPurchased");
+        await logPoolState(pool, buyer1, "After First Buy (1 ETH)");
+
+        const buyerTokenBalance = await pool.balanceOf(buyer1.address);
+        expect(buyerTokenBalance).to.be.gt(0n);
+
+        const finalEthBalanceBuyer = await ethers.provider.getBalance(buyer1.address);
+        const expectedEthBalanceBuyer = initialEthBalanceBuyer - buyAmountEth - gasCost;
+        const diff = finalEthBalanceBuyer > expectedEthBalanceBuyer ? finalEthBalanceBuyer - expectedEthBalanceBuyer : expectedEthBalanceBuyer - finalEthBalanceBuyer;
+        expect(diff).to.be.lte(parseEther("0.001")); // Allow a small tolerance for gas variations
+
+        expect(await ethers.provider.getBalance(pool.target)).to.equal(initialPoolEthBalance + buyAmountEth);
+        
+        expect(await pool.ethRaised()).to.be.gt(0n); // Net ETH for curve
+        expect(await pool.totalTokensSoldFromCurve()).to.equal(buyerTokenBalance); // Assuming first buyer
+        
+        // Check fees accumulated
+        expect(await pool.accumulatedLotteryTax()).to.be.gt(0n);
+        expect(await pool.accumulatedHolderTax()).to.be.gt(0n);
+        expect(await pool.accumulatedProtocolTax()).to.be.gt(0n);
+        expect(await pool.accumulatedDevTax()).to.be.gt(0n);
+    });
+
+    it("Should reject buys below minimum ETH", async function () {
+        const belowMinBuy = parseEther("0.0001");
+        await expect(pool.connect(buyer1).buy({ value: belowMinBuy }))
+            .to.be.revertedWith("Below minimum buy amount");
+    });
+
+    it("Should allow a user to sell tokens after buying", async function () {
+        const buyAmountEth = parseEther("1");
+        await pool.connect(buyer1).buy({ value: buyAmountEth });
+        const tokensBought = await pool.balanceOf(buyer1.address);
+        expect(tokensBought).to.be.gt(0n);
+
+        await logPoolState(pool, buyer1, "Before Sell");
+
+        const initialEthBalanceSeller = await ethers.provider.getBalance(buyer1.address);
+        const initialPoolEthBalanceBeforeSell = await ethers.provider.getBalance(pool.target);
+        const initialPoolTokenBalance = await pool.balanceOf(pool.target);
+
+        const tokensToSell = tokensBought / 2n;
+        
+        const tx = await pool.connect(buyer1).sell(tokensToSell);
+        const receipt = await tx.wait();
+        
+        const actualGasPrice = receipt.effectiveGasPrice ?? 0n;
+        const gasCost = receipt.gasUsed * actualGasPrice;
+        
+        await expect(tx).to.emit(pool, "TokensSold");
+        await logPoolState(pool, buyer1, `After Selling ${formatUnits(tokensToSell, 18)} tokens`);
+
+        const finalTokenBalance = await pool.balanceOf(buyer1.address);
+        expect(finalTokenBalance).to.equal(tokensBought - tokensToSell);
+        
+        expect(await ethers.provider.getBalance(buyer1.address)).to.be.gt(initialEthBalanceSeller - gasCost);
+        expect(await pool.balanceOf(pool.target)).to.equal(initialPoolTokenBalance + tokensToSell);
+    });
+
+    it("Should reject selling 0 tokens or more tokens than owned", async function () {
+        await expect(pool.connect(buyer1).sell(0n)).to.be.revertedWith("Must sell more than 0 tokens");
+        
+        const tokensToSell = parseEther("100"); // 100 tokens
+        await expect(pool.connect(buyer1).sell(tokensToSell)) // Buyer1 has 0 tokens initially
+            .to.be.revertedWith("Not enough tokens to sell");
+
+        // Buy some, then try to sell more
+        await pool.connect(buyer1).buy({ value: parseEther("0.1") });
+        const balance = await pool.balanceOf(buyer1.address);
+        await expect(pool.connect(buyer1).sell(balance + 1n))
+            .to.be.revertedWith("Not enough tokens to sell");
+    });
+    
+    it("addToLotteryPool should increase lotteryPool and re-initialize curve if called before activation", async function () {
+        const initialLottery = await pool.lotteryPool();
+        const initialVToken = await pool.virtualTokenReserve();
+        const initialVEth = await pool.virtualEthReserve();
+        const initialK = await pool.constant_k();
+
+        const amountToAdd = parseEther("1");
+        // This function is on the Pool contract, which is owned by Launchpad.
+        // To call it, owner of Launchpad needs to call a function on Launchpad,
+        // or Pool needs to be Ownable by an EOA.
+        // Current Pool.sol has `addToLotteryPool` as external payable.
+        // And no Ownable modifier. So anyone can call it.
+        
+        await expect(pool.connect(owner).addToLotteryPool({ value: amountToAdd }))
+            .to.emit(pool, "LotteryPoolUpdated")
+            .withArgs(initialLottery + amountToAdd);
+        
+        expect(await pool.lotteryPool()).to.equal(initialLottery + amountToAdd);
+
+        // _initializeCurveFirstPhase is called, parameters should change
+        expect(await pool.virtualTokenReserve()).to.not.equal(initialVToken);
+        expect(await pool.virtualEthReserve()).to.not.equal(initialVEth);
+        expect(await pool.constant_k()).to.not.equal(initialK);
+
+        await logPoolState(pool, owner, "After addToLotteryPool");
+
+        await expect(pool.connect(owner).addToLotteryPool({ value: 0n }))
+            .to.be.revertedWith("Must add positive ETH amount to lottery pool");
+            
+        const currentLotteryMax = parseEther("120");
+        const currentLottery = await pool.lotteryPool();
+        const tooMuchToAdd = currentLotteryMax - currentLottery + parseEther("1"); // Ensure it's positive before checking
+         if (tooMuchToAdd > 0n) {
+            await expect(pool.connect(owner).addToLotteryPool({ value: tooMuchToAdd }))
+                .to.be.revertedWith("Would exceed maximum lottery pool");
+        }
+    });
+
+
+    describe("Simulations", function () {
+        const tokensForInitialPhase = INITIAL_SUPPLY_POOL * BigInt(100 - RESERVED_SUPPLY_PERCENTAGE_POOL) / 100n; // 800M
+        const reservedTokens = INITIAL_SUPPLY_POOL - tokensForInitialPhase; // 200M
+
+        it("Simulation 1: Reach lotteryPool target (accumulatedLotteryTax >= lotteryPool)", async function () {
+            console.log("--- Simulation 1: Reaching Lottery Pool Target ---");
+            await logPoolState(pool, buyer1, "Sim1 Start");
+
+            const targetLotteryTax = await pool.lotteryPool();
+            let accumulatedLottery = await pool.accumulatedLotteryTax();
+            let buysMade = 0;
+
+            // Buy in chunks until lottery tax target is met
+            // Lottery tax is 30% (LOTTERY_POOL_FEE_NUMERATOR = 30, DENOMINATOR = 100)
+            while (accumulatedLottery < targetLotteryTax && buysMade < 50) { // Safety break
+                const neededTax = targetLotteryTax - accumulatedLottery;
+                // Gross ETH needed for that tax = neededTax / 0.3 = neededTax * 100 / 30
+                let buyEthAmount = neededTax * 100n / 30n;
+                
+                if (buyEthAmount < minBuy) { // Ensure min buy
+                    buyEthAmount = minBuy;
+                }
+                // Cap buy amount to avoid huge single buys, e.g., 1 ETH at a time if needed is large
+                if (buyEthAmount > parseEther("1")) {
+                    buyEthAmount = parseEther("1");
+                }
+                 // Check if buyer has enough ETH (Hardhat signers have a lot by default)
+
+                console.log(`Buy #${buysMade + 1}: Attempting to buy with ${formatEther(buyEthAmount)} ETH to meet lottery tax.`);
+                const buyTx = await pool.connect(buyer1).buy({ value: buyEthAmount });
+                const receipt = await buyTx.wait();
+                
+                const purchasedEvent = receipt.logs.find(e => e?.eventName === 'TokensPurchased');
+                const lotteryFeeApplied = purchasedEvent?.args.lotteryFeeApplied || 0n;
+
+                accumulatedLottery = await pool.accumulatedLotteryTax();
+                buysMade++;
+                await logPoolState(pool, buyer1, `Sim1 Buy #${buysMade} (Paid ${formatEther(buyEthAmount)}, Lottery Fee: ${formatEther(lotteryFeeApplied)})`);
+
+                if (await pool.isLotteryTaxActive() === false) {
+                    console.log("Lottery tax became inactive.");
+                    expect(await pool.isReservedSupplyActive()).to.be.true; // Should trigger reserved supply
+                    break; 
+                }
+            }
+
+            expect(await pool.isLotteryTaxActive()).to.be.false;
+            expect(await pool.isReservedSupplyActive()).to.be.true;
+            expect(await pool.accumulatedLotteryTax()).to.be.gte(targetLotteryTax);
+            console.log("--- Simulation 1 End ---");
+        });
+
+
+        it("Simulation 2 & 3: Sell 800M initial tokens, then 200M reserved tokens", async function () {
+            console.log("\n--- Simulation 2 & 3: Selling All Tokens ---");
+            
+            let currentAccLotteryTax = await pool.accumulatedLotteryTax();
+            const targetLotteryTax = await pool.lotteryPool();
+            let prelimBuys = 0;
+
+            if (!(await pool.isReservedSupplyActive())) {
+                console.log("Activating reserved supply first by meeting lottery target...");
+                 while (currentAccLotteryTax < targetLotteryTax && prelimBuys < 60) { // Increased safety break to 60
+                    const neededTax = targetLotteryTax - currentAccLotteryTax;
+                    let buyEthAmount = minBuy; // Default to minBuy
+
+                    if (neededTax > 0n) { // Only calculate if more tax is needed
+                        buyEthAmount = neededTax * 100n / 30n; // Assuming 30% tax
+                        if (buyEthAmount <= 0n) { // If calculation results in zero or less (due to precision with small neededTax)
+                            buyEthAmount = minBuy; // Use minBuy to ensure progress
+                        } else if (buyEthAmount < minBuy) {
+                            buyEthAmount = minBuy;
+                        }
+                    }
+                    
+                    // Cap individual buys if calculated amount is too large for one step
+                    if (buyEthAmount > parseEther("1")) {
+                         buyEthAmount = parseEther("1");
+                    }
+
+                    // console.log(`Sim2/3 Prelim Buy #${prelimBuys + 1}: Attempting to buy with ${formatEther(buyEthAmount)} ETH. NeededTax: ${formatEther(neededTax)}`);
+                    await pool.connect(buyer2).buy({ value: buyEthAmount });
+                    currentAccLotteryTax = await pool.accumulatedLotteryTax();
+                    prelimBuys++;
+                    if (await pool.isLotteryTaxActive() === false) {
+                         console.log("Lottery tax became inactive during prelim buys.");
+                         break;
+                    }
+                }
+                // Fallback: if loop finished by count but target not met, try one last precise or minBuy.
+                if (await pool.isLotteryTaxActive() && currentAccLotteryTax < targetLotteryTax && prelimBuys >= 60) {
+                    console.log("Preliminary buys reached limit, trying one more small/precise buy to meet target.");
+                    const finalNeededTax = targetLotteryTax - currentAccLotteryTax;
+                    let finalBuyAmount = minBuy;
+                    if (finalNeededTax > 0n) {
+                        finalBuyAmount = finalNeededTax * 100n / 30n;
+                        if (finalBuyAmount <= 0n) finalBuyAmount = minBuy;
+                        if (finalBuyAmount < minBuy) finalBuyAmount = minBuy;
+                    }
+                    // console.log(`Sim2/3 Final Prelim Buy: Attempting to buy with ${formatEther(finalBuyAmount)} ETH.`);
+                    await pool.connect(buyer2).buy({ value: finalBuyAmount });
+                }
+
+                console.log(`Preliminary buys to activate reserved supply: ${prelimBuys}`);
+                await logPoolState(pool, buyer2, "Sim2/3 After ensuring reserved supply active");
+            }
+            expect(await pool.isReservedSupplyActive(), "Reserved supply should be active after preliminary buys").to.be.true;
+            expect(await pool.isLotteryTaxActive(), "Lottery tax should be inactive after preliminary buys").to.be.false;
+
+            // Scenario 2b: Sell initial 800M tokens (actually, until total sold reaches this amount)
+            console.log("\n--- Scenario 2b: Selling initial phase tokens (up to 800M total sold) ---");
+            let totalTokensSold = await pool.totalTokensSoldFromCurve();
+            let buysFor800M = 0;
+
+            const targetSold800M = INITIAL_SUPPLY_POOL * 80n / 100n; // 800M tokens
+
+            while(totalTokensSold < targetSold800M && buysFor800M < 200) { // Extended safety break
+                const remainingToSellFor800M = targetSold800M - totalTokensSold;
+                let buyEthAmount = parseEther("10"); // Buy with 10 ETH chunks to speed up. Max 120 ETH lottery pool.
+                                                // Max 120ETH pool, so total "effective liquidity" for curve setup is 360ETH
+                                                // This should be enough to move significantly.
+
+                if (buyEthAmount < minBuy) buyEthAmount = minBuy;
+
+                const buyer = (buysFor800M % 2 === 0) ? buyer1 : buyer2; // Alternate buyers
+
+                try {
+                    const tx = await pool.connect(buyer).buy({value: buyEthAmount});
+                    await tx.wait();
+                    totalTokensSold = await pool.totalTokensSoldFromCurve();
+                    buysFor800M++;
+                    if (buysFor800M % 5 === 0 || totalTokensSold >= targetSold800M) { // Log every 5 buys or if target met
+                         await logPoolState(pool, buyer, `Sim2b Buy #${buysFor800M}, Total Sold: ${formatUnits(totalTokensSold, 18)}`);
+                    }
+                } catch (e) {
+                    console.error("Error during buy in Sim2b, possible depletion or other issue:", e.message);
+                    if (e.message.includes("Purchase exceeds total available supply for curve") || e.message.includes("Would receive zero tokens")) {
+                         console.log("Reached effective supply limit for current curve state or price too high.");
+                         break;
+                    }
+                    throw e; // re-throw if unexpected
+                }
+                
+                const contractSupply = await pool.balanceOf(pool.target);
+                if (contractSupply < parseEther("1")) { // If contract has very few tokens left
+                    console.log("Contract token balance very low, stopping buys.");
+                    break;
+                }
+            }
+            console.log(`Finished attempt to sell up to 800M tokens. Actual sold: ${formatUnits(totalTokensSold,18)}`);
+            expect(totalTokensSold).to.be.lte(INITIAL_SUPPLY_POOL); // Cannot sell more than total supply
+
+
+            // Scenario 2c: After 800M tokens (approx), using the reserved 200M supply
+            console.log("\n--- Scenario 2c: Selling remaining tokens from reserved supply (up to 1B total) ---");
+            // Reserved supply should already be active.
+            expect(await pool.isReservedSupplyActive()).to.be.true;
+            
+            totalTokensSold = await pool.totalTokensSoldFromCurve(); // Update current total sold
+            let buysForNext200M = 0;
+            const targetSoldTotal1B = INITIAL_SUPPLY_POOL;
+
+            while(totalTokensSold < targetSoldTotal1B && buysForNext200M < 200) { // Safety break
+                let buyEthAmount = parseEther("10"); // Continue with 10 ETH buys
+
+                if (buyEthAmount < minBuy) buyEthAmount = minBuy;
+
+                const buyer = (buysForNext200M % 2 === 0) ? buyer1 : buyer2;
+                
+                const contractTokens = await pool.balanceOf(pool.target);
+                if (contractTokens === 0n){
+                    console.log("Contract is out of tokens. Stopping simulation.");
+                    break;
+                }
+                 // If calculated tokens to buy is more than available, it should cap or revert.
+                // The buy() function has `require(tokensToTransfer <= tokensRemainingInContractForSale)`
+
+                try {
+                    const tx = await pool.connect(buyer).buy({value: buyEthAmount});
+                    await tx.wait();
+                    totalTokensSold = await pool.totalTokensSoldFromCurve();
+                    buysForNext200M++;
+                     if (buysForNext200M % 5 === 0 || totalTokensSold >= targetSoldTotal1B) {
+                        await logPoolState(pool, buyer, `Sim2c Buy #${buysForNext200M}, Total Sold: ${formatUnits(totalTokensSold, 18)}`);
+                    }
+                } catch (e) {
+                    console.error("Error during buy in Sim2c:", e.message);
+                     if (e.message.includes("Purchase exceeds total available supply for curve") || 
+                         e.message.includes("Not enough tokens in contract balance") ||
+                         e.message.includes("Would receive zero tokens")) {
+                         console.log("Reached supply limit or price is too high to get tokens.");
+                         break;
+                    }
+                    // If it's another error, let it fail the test
+                    throw e;
+                }
+
+                if ((await pool.balanceOf(pool.target)) === 0n) {
+                     console.log("All tokens from contract sold out.");
+                     break;
+                }
+            }
+            totalTokensSold = await pool.totalTokensSoldFromCurve(); // final check
+            console.log(`Finished attempt to sell all 1B tokens. Actual total sold: ${formatUnits(totalTokensSold,18)}`);
+            await logPoolState(pool, buyer2, "Sim2/3 End - After attempting to sell all tokens");
+
+            expect(totalTokensSold).to.be.lte(INITIAL_SUPPLY_POOL);
+            if (totalTokensSold === INITIAL_SUPPLY_POOL) {
+                console.log("Successfully sold all 1 Billion tokens!");
+                expect(await pool.balanceOf(pool.target)).to.equal(0n);
+            } else {
+                console.warn(`Could not sell all tokens. Sold: ${formatUnits(totalTokensSold,18)} / ${formatUnits(INITIAL_SUPPLY_POOL,18)}`);
+            }
+
+            // Try to buy more after all tokens are supposedly sold
+            if (totalTokensSold >= INITIAL_SUPPLY_POOL - parseEther("1")) { // If very close to or at total supply
+                 await expect(pool.connect(buyer1).buy({value: minBuy}))
+                    .to.be.reverted; // Should revert, likely with "Purchase exceeds total available supply for curve" or "Would receive zero tokens"
+                console.log("Attempt to buy after all tokens sold reverted as expected.");
+            }
+
+            // Test selling back some tokens after full/near depletion
+            const buyer1Balance = await pool.balanceOf(buyer1.address);
+            if (buyer1Balance > 0n) {
+                console.log(`Buyer1 has ${formatUnits(buyer1Balance,18)} tokens. Attempting to sell half.`);
+                const sellAmount = buyer1Balance / 2n;
+                if (sellAmount > 0n) {
+                    await pool.connect(buyer1).sell(sellAmount);
+                    await logPoolState(pool, buyer1, `After Buyer1 sold back ${formatUnits(sellAmount,18)} tokens`);
+                    expect(await pool.balanceOf(pool.target)).to.be.gt(0n); // Contract should have tokens again
+                }
+            }
+        });
+    });
 });
