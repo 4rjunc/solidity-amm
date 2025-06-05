@@ -30,7 +30,7 @@ contract TokenLaunchpad is Ownable {
         string memory name,
         string memory symbol,
         uint256 initialLotteryPool
-     ) public returns (address) {
+     ) public onlyOwner returns (address) {
 
        //change to initialOwer or a multisig wallet
        BondingCurvePool newToken = new BondingCurvePool(name, symbol, initialLotteryPool);

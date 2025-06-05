@@ -13,7 +13,7 @@ contract BondingCurvePool is ERC20 {
     // Constants
     uint256 public constant INITIAL_SUPPLY = 1_000_000_000 * 1e18; // 1 Billion tokens with 18 decimals
     uint256 public constant MIN_LOTTERY_POOL = 0.01 ether; // 0.01 ETH minimum
-    uint256 public constant MAX_LOTTERY_POOL = 120 ether; // 120 ETH maximum (Increased from 100 ether)
+    uint256 public constant MAX_LOTTERY_POOL = 100 ether; // 100 ETH maximum
     uint256 public constant MIN_BUY = 0.001 ether; // Minimum purchase
     
     uint256 public constant RESERVED_SUPPLY_PERCENTAGE = 20; // 20% of tokens reserved for later activation
@@ -56,7 +56,7 @@ contract BondingCurvePool is ERC20 {
     uint256 public accumulatedDevTax;
     bool public isLotteryTaxActive = true;
     bool public isReservedSupplyActive = false; // Tracks if the reserved supply has been activated
-    
+        
     event TokensPurchased(address indexed buyer, uint256 grossEthAmount, uint256 netEthForCurve, uint256 tokensReceived, uint256 lotteryFeeApplied);
     event TokensSold(address indexed seller, uint256 amountTokens, uint256 amountEth);
     event LotteryPoolUpdated(uint256 newLotteryPool);
@@ -387,5 +387,22 @@ contract BondingCurvePool is ERC20 {
     // Getter for tokens that are part of the initial curve setup phase
     function getTokensForInitialCurvePhase() public view returns (uint256) {
         return INITIAL_SUPPLY - reservedSupplyAmount;
+    }
+
+    // Function to get the remaining tokens from the reserved supply that are available for sale
+    function getRemainingReservedSupplyForSale() public view returns (uint256) {
+        if (!isReservedSupplyActive) {
+            return 0;
+        }
+        uint256 initialPhaseTokens = getTokensForInitialCurvePhase();
+        if (totalTokensSoldFromCurve <= initialPhaseTokens) {
+            // Still in the initial phase (or exactly at the boundary), so all reserved supply is notionally available
+            return reservedSupplyAmount;
+        }
+        uint256 soldFromReserved = totalTokensSoldFromCurve - initialPhaseTokens;
+        if (soldFromReserved >= reservedSupplyAmount) {
+            return 0; // All reserved supply has been sold
+        }
+        return reservedSupplyAmount - soldFromReserved;
     }
 }
